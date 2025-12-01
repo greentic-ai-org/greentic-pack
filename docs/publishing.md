@@ -14,6 +14,9 @@ Publishing flow:
    dependency order.
 3. Wait for the job to finish. Published versions are immutable; if a release
    fails, yank the partial upload and bump the patch version before re-tagging.
+4. Tag pushes also build release binaries for `greentic-pack` and upload them
+   to the corresponding GitHub release with `cargo-binstall` metadata, so users
+   can install via `cargo binstall greentic-pack`.
 
 Local dry-run before tagging:
 

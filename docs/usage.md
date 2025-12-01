@@ -3,6 +3,18 @@
 This guide expands on the README with end-to-end instructions for building
 Greentic packs and integrating them with the MCP runtime.
 
+## Installing the CLI
+
+Fetch the prebuilt release binaries via `cargo-binstall`:
+
+```bash
+cargo install cargo-binstall   # run once
+cargo binstall greentic-pack
+```
+
+The package bundles both `greentic-pack` and `gtpack-inspect`; once installed
+they're available on your `PATH`.
+
 ## Workflow overview
 
 1. **Author a pack manifest** – create `pack.yaml` with metadata, `flow_files`,

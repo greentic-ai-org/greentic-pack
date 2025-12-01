@@ -1106,7 +1106,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-pack"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1563,9 +1563,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.37.3"
+version = "0.37.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4543525fce6b350188b8c8cc9a275f2ff68be8f655558cd039745795077547e1"
+checksum = "73c9ffb2b5c56d58030e1b532d8e8389da94590515f118cf35b5cb68e4764a7e"
 dependencies = [
  "ahash",
  "bytecount",
@@ -1930,7 +1930,7 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 
 [[package]]
 name = "pack_component"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "greentic-interfaces-host",
  "serde",
@@ -1940,11 +1940,11 @@ dependencies = [
 
 [[package]]
 name = "pack_component_template"
-version = "0.4.7"
+version = "0.4.8"
 
 [[package]]
 name = "packc"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2299,9 +2299,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.37.3"
+version = "0.37.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15220c97dd63468dd770536d67748040b18cef01188b735ace92f83665c0f07d"
+checksum = "4283168a506f0dcbdce31c9f9cce3129c924da4c6bca46e46707fcb746d2d70c"
 dependencies = [
  "ahash",
  "fluent-uri",
@@ -4026,18 +4026,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.30"
+version = "0.8.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ea879c944afe8a2b25fef16bb4ba234f47c694565e97383b36f3a878219065c"
+checksum = "fd74ec98b9250adb3ca554bdde269adf631549f51d8a8f8f0a10b50f1cb298c3"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.30"
+version = "0.8.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf955aa904d6040f70dc8e9384444cb1030aed272ba3cb09bbc4ab9e7c1f34f5"
+checksum = "d8a8d209fdf45cf5138cbb5a506f6b52522a25afccc534d1475dad8e31105c6a"
 dependencies = [
  "proc-macro2",
  "quote",

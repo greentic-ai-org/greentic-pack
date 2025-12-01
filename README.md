@@ -8,6 +8,15 @@
 - `pack_component`: a reusable Wasm component crate that exposes the
   `greentic:pack-export` interface using the artefacts produced by `packc`.
 
+## Installation
+
+Install the prebuilt CLI binaries with `cargo-binstall`:
+
+```bash
+cargo install cargo-binstall   # run once
+cargo binstall greentic-pack
+```
+
 ## Repository layout
 
 ```
