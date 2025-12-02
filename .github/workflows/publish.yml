@@ -23,7 +23,8 @@ jobs:
           cargo test --workspace --all-features -- --nocapture
 
   publish:
-    if: github.event_name == 'push' || startsWith(github.ref, 'refs/tags/')
+    # Only publish for tag-triggered runs (including workflow_dispatch with a tag ref).
+    if: startsWith(github.ref, 'refs/tags/')
     needs: build-test
     runs-on: ubuntu-latest
     permissions:
@@ -43,8 +44,8 @@ jobs:
           dry-run: false
 
   binstall:
-    # Run whenever publish ran (even if it failed) so binstall artifacts are never skipped.
-    if: always() && needs.publish.result != 'skipped'
+    # Run for tag-based publishes (even if publish failed) so binstall artifacts are never skipped on releases.
+    if: startsWith(github.ref, 'refs/tags/') && always() && needs.publish.result != 'skipped'
     needs: publish
     runs-on: ${{ matrix.os }}
     strategy:
