@@ -82,5 +82,5 @@ jobs:
           build-tool: binstall
           archive: tgz
           tag: ${{ github.ref_name }}
-          ref: ${{ github.sha }}
+          ref: refs/tags/${{ github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
