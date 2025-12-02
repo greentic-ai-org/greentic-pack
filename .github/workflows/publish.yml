@@ -23,8 +23,7 @@ jobs:
           cargo test --workspace --all-features -- --nocapture
 
   publish:
-    # Publish on master pushes, tag pushes, or manual dispatches.
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    # Publish on any invocation of this workflow (push or dispatch).
     needs: build-test
     runs-on: ubuntu-latest
     permissions:
@@ -45,7 +44,7 @@ jobs:
 
   binstall:
     # Run whenever publish ran (even if it failed) so binstall artifacts are never skipped.
-    if: always() && needs.publish.result != 'skipped'
+    if: always()
     needs: publish
     runs-on: ${{ matrix.os }}
     strategy:
