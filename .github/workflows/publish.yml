@@ -23,8 +23,8 @@ jobs:
           cargo test --workspace --all-features -- --nocapture
 
   publish:
-    # Only publish for tag-triggered runs (including workflow_dispatch with a tag ref).
-    if: startsWith(github.ref, 'refs/tags/')
+    # Publish on master pushes and tag-based runs (including workflow_dispatch with a tag ref).
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/')
     needs: build-test
     runs-on: ubuntu-latest
     permissions:
@@ -44,8 +44,8 @@ jobs:
           dry-run: false
 
   binstall:
-    # Run for tag-based publishes (even if publish failed) so binstall artifacts are never skipped on releases.
-    if: startsWith(github.ref, 'refs/tags/') && always() && needs.publish.result != 'skipped'
+    # Run on master pushes and tag-based publishes (even if publish failed) so binstall artifacts are never skipped.
+    if: always() && needs.publish.result != 'skipped' && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/'))
     needs: publish
     runs-on: ${{ matrix.os }}
     strategy:
@@ -63,11 +63,15 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - name: Build and upload binstall artifacts
+        if: startsWith(github.ref, 'refs/tags/')
         uses: taiki-e/upload-rust-binary-action@v1
         with:
           manifest-path: crates/greentic-pack/Cargo.toml
           bin: greentic-pack,gtpack-inspect
           target: ${{ matrix.target }}
-          binstall: true
+          build-tool: binstall
           archive: tgz
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Skip binstall upload for non-tag push
+        if: github.ref == 'refs/heads/master'
+        run: echo "Non-tag push on master; skipping binstall release upload."
