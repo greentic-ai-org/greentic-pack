@@ -12,6 +12,7 @@ use semver::Version;
 use serde_json::Map as JsonMap;
 
 use crate::manifest::{McpComponentSpec, SpecBundle, normalize_protocol};
+use crate::path_safety::normalize_under_root;
 
 #[derive(Debug, Clone)]
 pub struct ComposedMcpComponent {
@@ -74,7 +75,7 @@ pub fn compose_all_with_override(
 }
 
 fn resolve_router_path(pack_dir: &Path, router_ref: &str) -> Result<PathBuf> {
-    let path = pack_dir.join(router_ref);
+    let path = normalize_under_root(pack_dir, &PathBuf::from(router_ref))?;
     if path.exists() {
         Ok(path)
     } else {

@@ -91,7 +91,7 @@ pub fn run_with_cli(cli: Cli) -> Result<()> {
     ));
 
     match cli.command {
-        Command::Build(args) => build::run(&build::BuildOptions::from(args))?,
+        Command::Build(args) => build::run(&build::BuildOptions::from_args(args)?)?,
         Command::Lint(args) => lint::handle(args, cli.json)?,
         Command::New(args) => new::handle(args, cli.json)?,
         Command::Sign(args) => sign::handle(args, cli.json)?,

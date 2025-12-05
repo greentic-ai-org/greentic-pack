@@ -78,18 +78,7 @@ jobs:
       - name: Derive release tag and title from workspace version
         run: |
           set -euo pipefail
-          version=$(python3 - <<'PY'
-          import pathlib, tomllib, sys
-          cargo_toml = pathlib.Path("Cargo.toml")
-          if not cargo_toml.exists():
-              sys.exit("Cargo.toml not found at workspace root")
-          data = tomllib.loads(cargo_toml.read_text())
-          v = data.get("workspace", {}).get("package", {}).get("version")
-          if not v:
-              sys.exit("workspace.package.version missing")
-          print(v)
-          PY
-          )
+          version=$(perl -ne 'print $1 if /^version\s*=\s*"([^"]+)"/' Cargo.toml | head -n 1)
           tag="v${version}"
           echo "RELEASE_TAG=${tag}" >> "$GITHUB_ENV"
           echo "RELEASE_TITLE=${tag}" >> "$GITHUB_ENV"

@@ -1,4 +1,5 @@
 use crate::manifest::PackSpec;
+use crate::path_safety::normalize_under_root;
 use anyhow::{Context, Result};
 use greentic_flow::flow_bundle::{FlowBundle, load_and_validate_bundle_with_ir};
 use sha2::{Digest, Sha256};
@@ -24,7 +25,7 @@ pub fn load_flows(pack_dir: &Path, spec: &PackSpec) -> Result<Vec<FlowAsset>> {
 
     for entry in &spec.flow_files {
         let relative_path = PathBuf::from(entry);
-        let absolute_path = pack_dir.join(&relative_path);
+        let absolute_path = normalize_under_root(pack_dir, &relative_path)?;
 
         let raw = fs::read_to_string(&absolute_path)
             .with_context(|| format!("failed to read flow {}", absolute_path.display()))?;

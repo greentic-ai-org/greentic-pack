@@ -1,4 +1,5 @@
 use crate::manifest::PackSpec;
+use crate::path_safety::normalize_under_root;
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
@@ -22,7 +23,7 @@ pub fn collect_templates(pack_dir: &Path, spec: &PackSpec) -> Result<Vec<Templat
 
     for dir in &spec.template_dirs {
         let relative_dir = PathBuf::from(dir);
-        let absolute_dir = pack_dir.join(&relative_dir);
+        let absolute_dir = normalize_under_root(pack_dir, &relative_dir)?;
 
         if !absolute_dir.exists() {
             tracing::warn!("template directory missing: {}", absolute_dir.display());

@@ -7,6 +7,7 @@ pub mod flows;
 pub mod manifest;
 pub mod mcp;
 pub mod new;
+pub mod path_safety;
 pub mod sbom;
 pub mod signing;
 pub mod telemetry;

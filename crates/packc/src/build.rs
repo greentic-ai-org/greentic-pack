@@ -1,4 +1,5 @@
 use crate::flows::FlowAsset;
+use crate::path_safety::normalize_under_root;
 use crate::templates::TemplateAsset;
 use crate::{BuildArgs, embed, flows, manifest, mcp, sbom, templates};
 use anyhow::{Context, Result};
@@ -23,13 +24,19 @@ pub struct BuildOptions {
     pub dry_run: bool,
 }
 
-impl From<BuildArgs> for BuildOptions {
-    fn from(args: BuildArgs) -> Self {
-        let pack_dir = normalize(args.input);
-        let component_out = normalize(args.component_out);
-        let manifest_out = normalize(args.manifest);
-        let sbom_out = normalize(args.sbom);
-        let gtpack_out = args.gtpack_out.map(normalize);
+impl BuildOptions {
+    pub fn from_args(args: BuildArgs) -> Result<Self> {
+        let pack_dir = args
+            .input
+            .canonicalize()
+            .with_context(|| format!("failed to canonicalize pack dir {}", args.input.display()))?;
+        let component_out = normalize_under_root(&pack_dir, &args.component_out)?;
+        let manifest_out = normalize_under_root(&pack_dir, &args.manifest)?;
+        let sbom_out = normalize_under_root(&pack_dir, &args.sbom)?;
+        let gtpack_out = args
+            .gtpack_out
+            .map(|p| normalize_under_root(&pack_dir, &p))
+            .transpose()?;
         let default_component_data = pack_dir
             .join(".packc")
             .join("pack_component")
@@ -37,10 +44,11 @@ impl From<BuildArgs> for BuildOptions {
             .join("data.rs");
         let component_data = args
             .component_data
-            .map(normalize)
+            .map(|p| normalize_under_root(&pack_dir, &p))
+            .transpose()?
             .unwrap_or(default_component_data);
 
-        Self {
+        Ok(Self {
             pack_dir,
             component_out,
             manifest_out,
@@ -48,7 +56,7 @@ impl From<BuildArgs> for BuildOptions {
             gtpack_out,
             component_data,
             dry_run: args.dry_run,
-        }
+        })
     }
 }
 
@@ -109,15 +117,6 @@ pub fn run(opts: &BuildOptions) -> Result<()> {
 
     info!("build complete");
     Ok(())
-}
-
-fn normalize(path: PathBuf) -> PathBuf {
-    if path.is_absolute() {
-        path
-    } else {
-        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        cwd.join(path)
-    }
 }
 
 fn write_if_changed(path: &Path, contents: &[u8]) -> Result<()> {

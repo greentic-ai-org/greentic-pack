@@ -1,4 +1,5 @@
 use crate::flows::FlowAsset;
+use crate::path_safety::normalize_under_root;
 use crate::templates::TemplateAsset;
 use anyhow::{Context, Result, anyhow};
 use base64::Engine as _;
@@ -113,7 +114,7 @@ pub struct SpecBundle {
 }
 
 pub fn load_spec(pack_dir: &Path) -> Result<SpecBundle> {
-    let manifest_path = pack_dir.join("pack.yaml");
+    let manifest_path = normalize_under_root(pack_dir, Path::new("pack.yaml"))?;
     let contents = fs::read_to_string(&manifest_path)
         .with_context(|| format!("failed to read {}", manifest_path.display()))?;
     let spec: PackSpec = serde_yaml_bw::from_str(&contents)
