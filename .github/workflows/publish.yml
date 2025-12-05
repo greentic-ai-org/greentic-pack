@@ -51,6 +51,9 @@ jobs:
     if: needs.publish.result == 'success'
     needs: publish
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       matrix:
         include:
