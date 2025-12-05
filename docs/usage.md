@@ -78,7 +78,8 @@ The command writes `pack.yaml`, `flows/welcome.ygtc`, `.gitignore`, a helper
 script under `scripts/build.sh`, and a `dist/` output directory. Passing
 `--sign` also drops a development Ed25519 keypair under `keys/` (set
 `GREENTIC_DEV_SEED` for deterministic output). Re-run `./scripts/build.sh` to
-generate `dist/pack.wasm`, `dist/manifest.cbor`, and `dist/sbom.cdx.json`.
+generate `dist/<id>.wasm`, `dist/manifest.cbor`, `dist/sbom.cdx.json`, and
+`dist/<id>.gtpack` (matching your pack id).
 
 ## Example build
 

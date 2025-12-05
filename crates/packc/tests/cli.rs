@@ -104,6 +104,36 @@ fn scaffold_with_sign_generates_keys() {
         "public key should be PEM"
     );
 }
+
+#[test]
+fn scaffold_build_script_uses_pack_id() {
+    let temp = tempdir().expect("temp dir");
+    let pack_id = "demo-pack";
+    let pack_dir = temp.path().join(pack_id);
+
+    let mut scaffold = Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+    scaffold.current_dir(workspace_root());
+    scaffold.args([
+        "new",
+        pack_id,
+        "--dir",
+        pack_dir.to_str().unwrap(),
+        "--log",
+        "warn",
+    ]);
+    scaffold.assert().success();
+
+    let build_script =
+        fs::read_to_string(pack_dir.join("scripts").join("build.sh")).expect("build script present");
+    assert!(
+        build_script.contains("dist/demo-pack.wasm"),
+        "build script should emit wasm named after pack id"
+    );
+    assert!(
+        build_script.contains("dist/demo-pack.gtpack"),
+        "build script should emit gtpack named after pack id"
+    );
+}
 #[test]
 fn build_outputs_gtpack_archive() {
     let temp = tempdir().expect("temp dir");

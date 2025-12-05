@@ -33,13 +33,6 @@ nodes:
       - out: true
 "#;
 
-const BUILD_SCRIPT: &str = r#"#!/usr/bin/env bash
-set -euo pipefail
-mkdir -p dist
-packc build --in . --out dist/pack.wasm --manifest dist/manifest.cbor --sbom dist/sbom.cdx.json
-echo "Built dist/pack.wasm"
-"#;
-
 const GITIGNORE: &str = r#"dist/
 .DS_Store
 *.swp
@@ -134,7 +127,7 @@ pub fn handle(args: NewArgs, emit_json: bool) -> Result<()> {
 
     write_file(
         &target_dir.join("scripts").join("build.sh"),
-        BUILD_SCRIPT.as_bytes(),
+        build_script(&args.id).as_bytes(),
         args.force,
     )?;
     make_executable(&target_dir.join("scripts").join("build.sh"))?;
@@ -192,6 +185,18 @@ fn ensure_template_supported(template: &TemplateKind) -> Result<()> {
     }
 }
 
+fn build_script(id: &str) -> String {
+    format!(
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p dist
+packc build --in . --out dist/{id}.wasm --manifest dist/manifest.cbor --sbom dist/sbom.cdx.json --gtpack-out dist/{id}.gtpack
+echo "Built dist/{id}.wasm and dist/{id}.gtpack"
+"#,
+        id = id
+    )
+}
+
 fn render_pack_spec(id: &str) -> String {
     let spec = PackSpec {
         pack_version: PACK_VERSION,
@@ -226,7 +231,7 @@ fn render_readme(id: &str, signed: bool) -> String {
         "# {id}\n\n\
         This pack was created with `packc new`. Build it locally with:\n\n\
         ```bash\n./scripts/build.sh\n```\n\n\
-        After building, load `dist/pack.wasm` in the Greentic runner.\n"
+        After building, load `dist/{id}.gtpack` in the Greentic runner.\n"
     );
 
     if signed {
