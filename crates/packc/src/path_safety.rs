@@ -13,7 +13,7 @@ pub fn normalize_under_root(root: &Path, candidate: &Path) -> Result<PathBuf> {
         .canonicalize()
         .with_context(|| format!("failed to canonicalize root {}", root.display()))?;
     let mut normalized = canon_root.clone();
-    let mut root_depth = canon_root.components().count();
+    let root_depth = canon_root.components().count();
 
     for comp in candidate.components() {
         match comp {
