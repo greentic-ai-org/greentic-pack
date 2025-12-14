@@ -2,3 +2,4 @@
 dist/
 .packc/
 **/.packc/
+.DS_Store

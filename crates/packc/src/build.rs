@@ -1,6 +1,7 @@
 use crate::config::{
     AssetConfig, ComponentConfig, ComponentOperationConfig, FlowConfig, PackConfig,
 };
+use crate::runtime::ResolvedRuntime;
 use anyhow::{Context, Result, anyhow};
 use greentic_flow::compile_ygtc_str;
 use greentic_types::{
@@ -28,10 +29,11 @@ pub struct BuildOptions {
     pub dry_run: bool,
     pub secrets_req: Option<PathBuf>,
     pub default_secret_scope: Option<String>,
+    pub runtime: ResolvedRuntime,
 }
 
 impl BuildOptions {
-    pub fn from_args(args: crate::BuildArgs) -> Result<Self> {
+    pub fn from_args(args: crate::BuildArgs, runtime: &ResolvedRuntime) -> Result<Self> {
         let pack_dir = args
             .input
             .canonicalize()
@@ -60,6 +62,7 @@ impl BuildOptions {
             dry_run: args.dry_run,
             secrets_req: args.secrets_req,
             default_secret_scope: args.default_secret_scope,
+            runtime: runtime.clone(),
         })
     }
 }

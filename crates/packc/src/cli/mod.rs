@@ -21,6 +21,14 @@ pub struct Cli {
     #[arg(long = "log", default_value = "info", global = true)]
     pub verbosity: String,
 
+    /// Force offline mode (disables any network activity)
+    #[arg(long, global = true)]
+    pub offline: bool,
+
+    /// Override cache directory (defaults to pack_dir/.packc or GREENTIC_PACK_CACHE_DIR)
+    #[arg(long = "cache-dir", global = true)]
+    pub cache_dir: Option<PathBuf>,
+
     /// Emit machine-readable JSON output where applicable
     #[arg(long, global = true)]
     pub json: bool,
@@ -93,18 +101,24 @@ pub fn resolve_env_filter(cli: &Cli) -> String {
 
 /// Execute the CLI using a pre-parsed argument set.
 pub fn run_with_cli(cli: Cli) -> Result<()> {
+    let runtime = crate::runtime::resolve_runtime(
+        std::env::current_dir()?.as_path(),
+        cli.cache_dir.as_deref(),
+        cli.offline,
+    );
+
     set_current_tenant_ctx(&TenantCtx::new(
         EnvId::try_from("local").expect("static env id"),
         TenantId::try_from("packc").expect("static tenant id"),
     ));
 
     match cli.command {
-        Command::Build(args) => build::run(&build::BuildOptions::from_args(args)?)?,
+        Command::Build(args) => build::run(&build::BuildOptions::from_args(args, &runtime)?)?,
         Command::Lint(args) => self::lint::handle(args, cli.json)?,
         Command::New(args) => new::handle(args, cli.json)?,
         Command::Sign(args) => self::sign::handle(args, cli.json)?,
         Command::Verify(args) => self::verify::handle(args, cli.json)?,
-        Command::Gui(cmd) => self::gui::handle(cmd, cli.json)?,
+        Command::Gui(cmd) => self::gui::handle(cmd, cli.json, &runtime)?,
     }
 
     Ok(())

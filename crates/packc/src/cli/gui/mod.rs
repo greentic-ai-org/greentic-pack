@@ -12,8 +12,12 @@ pub enum GuiCommand {
     LoveableConvert(loveable_convert::Args),
 }
 
-pub fn handle(cmd: GuiCommand, json: bool) -> Result<()> {
+pub fn handle(
+    cmd: GuiCommand,
+    json: bool,
+    runtime: &crate::runtime::ResolvedRuntime,
+) -> Result<()> {
     match cmd {
-        GuiCommand::LoveableConvert(args) => loveable_convert::handle(args, json),
+        GuiCommand::LoveableConvert(args) => loveable_convert::handle(args, json, runtime),
     }
 }

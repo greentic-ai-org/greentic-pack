@@ -143,7 +143,7 @@ struct Summary {
     assets_copied: usize,
 }
 
-pub fn handle(args: Args, json_out: bool) -> Result<()> {
+pub fn handle(args: Args, json_out: bool, runtime: &crate::runtime::ResolvedRuntime) -> Result<()> {
     let opts = ConvertOptions::try_from(args)?;
     let staging = TempDir::new().context("failed to create staging dir")?;
     let staging_root = staging.path();
@@ -154,6 +154,9 @@ pub fn handle(args: Args, json_out: bool) -> Result<()> {
     let mut _clone_guard: Option<TempDir> = None;
     let source_root = match &opts.source {
         Source::Repo { url, branch } => {
+            runtime
+                .network_policy()
+                .require_online("git clone (packc gui loveable-convert --repo-url)")?;
             let (temp, repo_dir) = clone_repo(url, branch)?;
             let path = repo_dir
                 .canonicalize()
@@ -175,7 +178,12 @@ pub fn handle(args: Args, json_out: bool) -> Result<()> {
 
     let assets_dir = match opts.source {
         Source::AssetsDir(_) => build_root,
-        _ => build_assets(&build_root, &opts)?,
+        _ => {
+            runtime
+                .network_policy()
+                .require_online("install/build GUI assets")?;
+            build_assets(&build_root, &opts)?
+        }
     };
 
     let assets_dir = assets_dir
@@ -199,6 +207,7 @@ pub fn handle(args: Args, json_out: bool) -> Result<()> {
         dry_run: false,
         secrets_req: None,
         default_secret_scope: None,
+        runtime: runtime.clone(),
     };
     build::run(&build_opts)?;
 
