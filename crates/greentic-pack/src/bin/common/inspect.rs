@@ -78,9 +78,12 @@ fn print_human(
                     .map(|s| {
                         format!(
                             "{}/{}{}",
-                            s.env(),
-                            s.tenant(),
-                            s.team().map(|t| format!("/{}", t)).unwrap_or_default()
+                            &s.env,
+                            &s.tenant,
+                            s.team
+                                .as_deref()
+                                .map(|t| format!("/{}", t))
+                                .unwrap_or_default()
                         )
                     })
                     .unwrap_or_else(|| "unspecified".to_string());

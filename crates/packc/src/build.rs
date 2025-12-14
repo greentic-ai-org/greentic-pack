@@ -559,10 +559,11 @@ fn fmt_key(req: &SecretRequirement) -> String {
 fn scope_key(scope: &SecretScope) -> String {
     format!(
         "{}/{}/{}",
-        scope.env(),
-        scope.tenant(),
+        &scope.env,
+        &scope.tenant,
         scope
-            .team()
+            .team
+            .as_deref()
             .map(|t| t.to_string())
             .unwrap_or_else(|| "_".to_string())
     )
@@ -607,12 +608,11 @@ fn parse_default_scope(raw: &str) -> Result<SecretScope> {
             raw
         );
     }
-    SecretScope::new(
-        parts[0].to_string(),
-        parts[1].to_string(),
-        parts.get(2).map(|s| s.to_string()),
-    )
-    .context("invalid default secret scope")
+    Ok(SecretScope {
+        env: parts[0].to_string(),
+        tenant: parts[1].to_string(),
+        team: parts.get(2).map(|s| s.to_string()),
+    })
 }
 
 fn write_secret_requirements_file(
