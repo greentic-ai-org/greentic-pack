@@ -6,9 +6,10 @@ use greentic_flow::compile_ygtc_str;
 use greentic_types::{
     ComponentCapability, ComponentConfigurators, ComponentId, ComponentManifest,
     ComponentOperation, Flow, FlowId, PackDependency, PackFlowEntry, PackId, PackKind,
-    PackManifest, PackSignatures, SemverReq, encode_pack_manifest,
+    PackManifest, PackSignatures, SecretRequirement, SecretScope, SemverReq, encode_pack_manifest,
 };
 use semver::Version;
+use serde_yaml_bw::Value as YamlValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
@@ -25,6 +26,8 @@ pub struct BuildOptions {
     pub sbom_out: Option<PathBuf>,
     pub gtpack_out: Option<PathBuf>,
     pub dry_run: bool,
+    pub secrets_req: Option<PathBuf>,
+    pub default_secret_scope: Option<String>,
 }
 
 impl BuildOptions {
@@ -55,6 +58,8 @@ impl BuildOptions {
             sbom_out,
             gtpack_out,
             dry_run: args.dry_run,
+            secrets_req: args.secrets_req,
+            default_secret_scope: args.default_secret_scope,
         })
     }
 }
@@ -79,6 +84,12 @@ pub fn run(opts: &BuildOptions) -> Result<()> {
         "loaded pack.yaml"
     );
 
+    let secret_requirements = aggregate_secret_requirements(
+        &config.components,
+        opts.secrets_req.as_deref(),
+        opts.default_secret_scope.as_deref(),
+    )?;
+
     let build = assemble_manifest(&config, &opts.pack_dir)?;
     let manifest_bytes = encode_pack_manifest(&build.manifest)?;
     info!(len = manifest_bytes.len(), "encoded manifest.cbor");
@@ -99,6 +110,16 @@ pub fn run(opts: &BuildOptions) -> Result<()> {
     }
 
     if let Some(gtpack_out) = opts.gtpack_out.as_ref() {
+        let mut build = build;
+        if !secret_requirements.is_empty() {
+            let logical = "secret-requirements.json".to_string();
+            let req_path =
+                write_secret_requirements_file(&opts.pack_dir, &secret_requirements, &logical)?;
+            build.assets.push(AssetFile {
+                logical_path: logical,
+                source: req_path,
+            });
+        }
         package_gtpack(gtpack_out, &manifest_bytes, &build)?;
         info!(gtpack_out = %gtpack_out.display(), "gtpack archive ready");
     }
@@ -438,6 +459,175 @@ fn write_stub_wasm(path: &Path) -> Result<()> {
     write_bytes(path, STUB)
 }
 
+fn aggregate_secret_requirements(
+    components: &[ComponentConfig],
+    override_path: Option<&Path>,
+    default_scope: Option<&str>,
+) -> Result<Vec<SecretRequirement>> {
+    let default_scope = default_scope.map(parse_default_scope).transpose()?;
+    let mut merged: BTreeMap<(String, String, String), SecretRequirement> = BTreeMap::new();
+
+    let mut process_req = |req: &SecretRequirement, source: &str| -> Result<()> {
+        let mut req = req.clone();
+        if req.scope.is_none() {
+            if let Some(scope) = default_scope.clone() {
+                req.scope = Some(scope);
+                tracing::warn!(
+                    key = %secret_key_string(&req),
+                    source,
+                    "secret requirement missing scope; applying default scope"
+                );
+            } else {
+                anyhow::bail!(
+                    "secret requirement {} from {} is missing scope (provide --default-secret-scope or fix the component manifest)",
+                    secret_key_string(&req),
+                    source
+                );
+            }
+        }
+        let scope = req.scope.as_ref().expect("scope present");
+        let fmt = fmt_key(&req);
+        let key_tuple = (req.key.clone().into(), scope_key(scope), fmt.clone());
+        if let Some(existing) = merged.get_mut(&key_tuple) {
+            merge_requirement(existing, &req);
+        } else {
+            merged.insert(key_tuple, req);
+        }
+        Ok(())
+    };
+
+    for component in components {
+        if let Some(secret_caps) = component.capabilities.host.secrets.as_ref() {
+            for req in &secret_caps.required {
+                process_req(req, &component.id)?;
+            }
+        }
+    }
+
+    if let Some(path) = override_path {
+        let contents = fs::read_to_string(path)
+            .with_context(|| format!("failed to read secrets override {}", path.display()))?;
+        let value: serde_json::Value = if path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
+            .unwrap_or(false)
+        {
+            let yaml: YamlValue = serde_yaml_bw::from_str(&contents)
+                .with_context(|| format!("{} is not valid YAML", path.display()))?;
+            serde_json::to_value(yaml).context("failed to normalise YAML secrets override")?
+        } else {
+            serde_json::from_str(&contents)
+                .with_context(|| format!("{} is not valid JSON", path.display()))?
+        };
+
+        let overrides: Vec<SecretRequirement> =
+            serde_json::from_value(value).with_context(|| {
+                format!(
+                    "{} must be an array of secret requirements (migration bridge)",
+                    path.display()
+                )
+            })?;
+        for req in &overrides {
+            process_req(req, &format!("override:{}", path.display()))?;
+        }
+    }
+
+    let mut out: Vec<SecretRequirement> = merged.into_values().collect();
+    out.sort_by(|a, b| {
+        let a_scope = a.scope.as_ref().map(scope_key).unwrap_or_default();
+        let b_scope = b.scope.as_ref().map(scope_key).unwrap_or_default();
+        (a_scope, secret_key_string(a), fmt_key(a)).cmp(&(
+            b_scope,
+            secret_key_string(b),
+            fmt_key(b),
+        ))
+    });
+    Ok(out)
+}
+
+fn fmt_key(req: &SecretRequirement) -> String {
+    req.format
+        .as_ref()
+        .map(|f| format!("{:?}", f))
+        .unwrap_or_else(|| "unspecified".to_string())
+}
+
+fn scope_key(scope: &SecretScope) -> String {
+    format!(
+        "{}/{}/{}",
+        scope.env(),
+        scope.tenant(),
+        scope
+            .team()
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| "_".to_string())
+    )
+}
+
+fn secret_key_string(req: &SecretRequirement) -> String {
+    let key: String = req.key.clone().into();
+    key
+}
+
+fn merge_requirement(base: &mut SecretRequirement, incoming: &SecretRequirement) {
+    if base.description.is_none() {
+        base.description = incoming.description.clone();
+    }
+    if let Some(schema) = &incoming.schema {
+        if base.schema.is_none() {
+            base.schema = Some(schema.clone());
+        } else if base.schema.as_ref() != Some(schema) {
+            tracing::warn!(
+                key = %secret_key_string(base),
+                "conflicting secret schema encountered; keeping first"
+            );
+        }
+    }
+
+    if !incoming.examples.is_empty() {
+        for example in &incoming.examples {
+            if !base.examples.contains(example) {
+                base.examples.push(example.clone());
+            }
+        }
+    }
+
+    base.required = base.required || incoming.required;
+}
+
+fn parse_default_scope(raw: &str) -> Result<SecretScope> {
+    let parts: Vec<_> = raw.split('/').collect();
+    if parts.len() < 2 || parts.len() > 3 {
+        anyhow::bail!(
+            "default secret scope must be ENV/TENANT or ENV/TENANT/TEAM (got {})",
+            raw
+        );
+    }
+    SecretScope::new(
+        parts[0].to_string(),
+        parts[1].to_string(),
+        parts.get(2).map(|s| s.to_string()),
+    )
+    .context("invalid default secret scope")
+}
+
+fn write_secret_requirements_file(
+    pack_root: &Path,
+    requirements: &[SecretRequirement],
+    logical_name: &str,
+) -> Result<PathBuf> {
+    let path = pack_root.join(".packc").join(logical_name);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    let data = serde_json::to_vec_pretty(&requirements)
+        .context("failed to serialise secret requirements")?;
+    fs::write(&path, data).with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -548,6 +738,73 @@ mod tests {
             .find(|item| item.id == component.id)
             .expect("component preserved");
         assert_eq!(stored_component.dev_flows, component.dev_flows);
+    }
+
+    #[test]
+    fn aggregate_secret_requirements_dedupes_and_sorts() {
+        let component: ComponentConfig = serde_json::from_value(json!({
+            "id": "component.a",
+            "version": "1.0.0",
+            "world": "greentic:demo@1.0.0",
+            "supports": [],
+            "profiles": { "default": "default", "supported": ["default"] },
+            "capabilities": {
+                "wasi": {},
+                "host": {
+                    "secrets": {
+                        "required": [
+                    {
+                        "key": "db/password",
+                        "required": true,
+                        "scope": { "env": "dev", "tenant": "t1" },
+                        "format": "text",
+                        "description": "primary"
+                    }
+                ]
+            }
+        }
+            },
+            "wasm": "component.wasm",
+            "operations": [],
+            "resources": {}
+        }))
+        .expect("component config");
+
+        let dupe: ComponentConfig = serde_json::from_value(json!({
+            "id": "component.b",
+            "version": "1.0.0",
+            "world": "greentic:demo@1.0.0",
+            "supports": [],
+            "profiles": { "default": "default", "supported": ["default"] },
+            "capabilities": {
+                "wasi": {},
+                "host": {
+                    "secrets": {
+                        "required": [
+                            {
+                        "key": "db/password",
+                        "required": true,
+                        "scope": { "env": "dev", "tenant": "t1" },
+                        "format": "text",
+                        "description": "secondary",
+                        "examples": ["example"]
+                    }
+                ]
+            }
+                }
+            },
+            "wasm": "component.wasm",
+            "operations": [],
+            "resources": {}
+        }))
+        .expect("component config");
+
+        let reqs = aggregate_secret_requirements(&[component, dupe], None, None)
+            .expect("aggregate secrets");
+        assert_eq!(reqs.len(), 1);
+        let req = &reqs[0];
+        assert_eq!(req.description.as_deref(), Some("primary"));
+        assert!(req.examples.contains(&"example".to_string()));
     }
 
     fn manifest_with_dev_flow() -> ComponentManifest {

@@ -1,10 +1,10 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
+use greentic_types::SecretRequirement;
 use greentic_types::TenantCtx;
 use greentic_types::component::ComponentManifest;
 use greentic_types::deployment::{
-    ChannelPlan, DeploymentPlan, MessagingPlan, MessagingSubjectPlan, RunnerPlan, SecretPlan,
-    TelemetryPlan,
+    ChannelPlan, DeploymentPlan, MessagingPlan, MessagingSubjectPlan, RunnerPlan, TelemetryPlan,
 };
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 
@@ -19,6 +19,7 @@ pub fn infer_base_deployment_plan(
     flows: &[FlowEntry],
     connectors: Option<&JsonValue>,
     components: &HashMap<String, ComponentManifest>,
+    secret_requirements: Option<Vec<SecretRequirement>>,
     tenant: &TenantCtx,
     environment: &str,
 ) -> DeploymentPlan {
@@ -32,7 +33,7 @@ pub fn infer_base_deployment_plan(
 
     let messaging = infer_messaging_plan(connectors);
     let channels = infer_channel_plan(connectors);
-    let secrets = infer_secret_plan(components);
+    let secrets = secret_requirements.unwrap_or_else(|| infer_secret_plan(components));
     let telemetry = infer_telemetry_plan(components);
 
     DeploymentPlan {
@@ -138,18 +139,15 @@ fn push_channel(prefix: &str, map: &JsonMap<String, JsonValue>, out: &mut Vec<Ch
     }
 }
 
-fn infer_secret_plan(components: &HashMap<String, ComponentManifest>) -> Vec<SecretPlan> {
-    let mut seen = BTreeSet::new();
+fn infer_secret_plan(components: &HashMap<String, ComponentManifest>) -> Vec<SecretRequirement> {
+    let mut seen = HashSet::new();
     let mut secrets = Vec::new();
     for component in components.values() {
         if let Some(secret_caps) = component.capabilities.host.secrets.as_ref() {
-            for key in &secret_caps.required {
-                if seen.insert(key.clone()) {
-                    secrets.push(SecretPlan {
-                        key: key.clone(),
-                        required: true,
-                        scope: "tenant".to_string(),
-                    });
+            for req in &secret_caps.required {
+                let key: String = req.key.clone().into();
+                if seen.insert(key) {
+                    secrets.push(req.clone());
                 }
             }
         }
@@ -250,7 +248,11 @@ mod tests {
                 wasi: WasiCapabilities::default(),
                 host: HostCapabilities {
                     secrets: Some(SecretsCapabilities {
-                        required: vec!["API_TOKEN".into()],
+                        required: {
+                            let mut req = SecretRequirement::default();
+                            req.key = "API_TOKEN".into();
+                            vec![req]
+                        },
                     }),
                     telemetry: Some(TelemetryCapabilities {
                         scope: greentic_types::component::TelemetryScope::Tenant,
@@ -278,6 +280,7 @@ mod tests {
             &flows,
             meta.annotations.get("connectors"),
             &components,
+            None,
             &tenant,
             "staging",
         );
@@ -295,5 +298,64 @@ mod tests {
         } else {
             panic!("messaging plan missing subjects");
         }
+    }
+
+    #[test]
+    fn prefers_provided_secret_requirements() {
+        let meta = PackMeta {
+            pack_version: crate::builder::PACK_VERSION,
+            pack_id: "demo.pack".to_string(),
+            version: Version::parse("1.2.3").unwrap(),
+            name: "Demo".into(),
+            kind: None,
+            description: None,
+            authors: Vec::new(),
+            license: None,
+            homepage: None,
+            support: None,
+            vendor: None,
+            imports: Vec::new(),
+            entry_flows: vec!["flow.main".into()],
+            created_at_utc: "2025-01-01T00:00:00Z".into(),
+            events: None,
+            repo: None,
+            messaging: None,
+            interfaces: Vec::new(),
+            annotations: JsonMap::new(),
+            distribution: None,
+            components: Vec::new(),
+        };
+        let flows = vec![FlowEntry {
+            id: "flow.main".into(),
+            kind: "conversation".into(),
+            entry: "start".into(),
+            file_yaml: "flows/main.ygtc".into(),
+            file_json: "flows/main.json".into(),
+            hash_blake3: "abc".into(),
+        }];
+        let tenant = TenantCtx::new(
+            EnvId::from_str("dev").unwrap(),
+            TenantId::from_str("tenant-1").unwrap(),
+        );
+        let secret = serde_json::from_value::<SecretRequirement>(json!({
+            "key": "db/password",
+            "required": true,
+            "scope": { "env": "dev", "tenant": "tenant-1" },
+            "format": "text"
+        }))
+        .unwrap();
+
+        let plan = infer_base_deployment_plan(
+            &meta,
+            &flows,
+            None,
+            &HashMap::new(),
+            Some(vec![secret.clone()]),
+            &tenant,
+            "dev",
+        );
+
+        assert_eq!(plan.secrets.len(), 1);
+        assert_eq!(plan.secrets[0].key, secret.key);
     }
 }

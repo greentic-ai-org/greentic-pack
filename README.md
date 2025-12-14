@@ -146,6 +146,26 @@ depends on the shared bindings from `greentic-interfaces`; no WIT files are
 vendored in this repository. Re-run `packc build` whenever the manifest or flow
 assets change to ensure `data.rs` stays in sync.
 
+#### Loveable → GUI packs
+
+Use `packc gui loveable-convert` to package a Loveable-generated app into a GUI
+`.gtpack`. The command supports cloning a repo (`--repo-url`), pointing at a
+local checkout (`--dir`), or reusing an existing build (`--assets-dir`). It
+generates `gui/manifest.json`, copies `gui/assets/**`, writes a canonical
+`pack.yaml`, and emits the `.gtpack` via the existing pack builder. Override
+routes with `--route /path:file.html`, force SPA/MPA with `--spa`, and set the
+output via `--out`.
+
+#### Secret requirements
+
+`packc build` now aggregates component secret requirements, dedupes them, and
+embeds `secret-requirements.json` in the `.gtpack`. Use `--secrets-req` to
+inject additional requirements during migration, and `--default-secret-scope
+ENV/TENANT[/TEAM]` (dev-only) to fill missing scopes. `gtpack-inspect` surfaces
+the aggregated list in both human and JSON output. `greentic-pack plan` reads
+the embedded `secret-requirements.json` (falling back to component manifests)
+so deployment plans reflect the migration data.
+
 ## Examples
 
 - `examples/weather-demo` – a toy conversational pack demonstrating the

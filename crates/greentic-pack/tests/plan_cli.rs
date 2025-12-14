@@ -12,6 +12,7 @@ use greentic_pack::events::{
     EventProviderCapabilities, EventProviderKind, EventProviderSpec, EventsSection, OrderingKind,
     ReliabilityKind, TransportKind,
 };
+use greentic_types::SecretRequirement;
 use greentic_types::component::{
     ComponentCapabilities, ComponentManifest, ComponentProfiles, HostCapabilities,
     SecretsCapabilities, TelemetryCapabilities, WasiCapabilities,
@@ -42,7 +43,11 @@ fn build_sample_pack(out_path: &Path) {
             wasi: WasiCapabilities::default(),
             host: HostCapabilities {
                 secrets: Some(SecretsCapabilities {
-                    required: vec!["API_TOKEN".into()],
+                    required: {
+                        let mut req = SecretRequirement::default();
+                        req.key = "API_TOKEN".into();
+                        vec![req]
+                    },
                 }),
                 telemetry: Some(TelemetryCapabilities {
                     scope: greentic_types::component::TelemetryScope::Tenant,

@@ -58,10 +58,39 @@ Usage: packc build --in <DIR> [--out <FILE>] [--manifest <FILE>]
 - `--component-data` – override the generated `data.rs` location if you need to
   export the payload somewhere other than `crates/pack_component/src/data.rs`.
 - `--dry-run` – validate inputs without writing artifacts or compiling Wasm.
+- `--secrets-req` – optional JSON/YAML file with additional secret
+  requirements (migration bridge).
+- `--default-secret-scope` – dev-only helper to fill missing secret scopes
+  (format: `ENV/TENANT[/TEAM]`).
 - `--log` – customise the tracing filter (defaults to `info`).
 
 `packc` writes structured progress logs to stderr. When invoking inside CI, pass
 `--dry-run` to skip Wasm compilation if the target toolchain is unavailable.
+
+### GUI pack converter (Loveable)
+
+`packc gui loveable-convert` turns a Loveable-generated app into a GUI `.gtpack`.
+
+Key flags:
+
+- `--pack-kind <layout|auth|feature|skin|telemetry>`
+- `--id <pack-id>` and `--version <semver>`
+- one of `--repo-url`, `--dir`, or `--assets-dir` (skip build)
+- optional build overrides: `--package-dir`, `--install-cmd`, `--build-cmd`, `--build-dir`
+- routing overrides: repeat `--route /path:file.html` (or `--routes path:html,...`)
+- `--spa true|false` to override SPA detection
+- `--out` (alias `--output`) for the resulting `.gtpack`
+
+Example (using prebuilt assets):
+
+```bash
+packc gui loveable-convert \
+  --pack-kind feature \
+  --id greentic.demo.gui \
+  --version 0.1.0 \
+  --assets-dir ./dist \
+  --out ./dist/demo.gtpack
+```
 
 ## Scaffolding new packs
 
@@ -126,6 +155,9 @@ local dev, CI, and operators. For convenience `plan` also accepts a pack source
 directory; in that case it invokes `packc build --gtpack-out` internally to
 create a temporary archive before running the planner. Set the
 `GREENTIC_PACK_PLAN_PACKC` environment variable if `packc` is not on `PATH`.
+When available, the planner pulls aggregated secret requirements from
+`secret-requirements.json` inside the archive; otherwise it falls back to the
+component manifests bundled in the pack.
 
 ## MCP components and flows
 

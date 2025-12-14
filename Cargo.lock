@@ -1112,9 +1112,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces"
-version = "0.4.55"
+version = "0.4.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9323311b289e4daf4d3cc48a22fb88a96733592c5fb60466515742afe61c1939"
+checksum = "daeedaad8b74e2544a02d031eeb70ae60596d677e17b246cc8d5133b34078da5"
 dependencies = [
  "anyhow",
  "greentic-types",
@@ -1129,9 +1129,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces-host"
-version = "0.4.55"
+version = "0.4.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1d8b5fc61a12747ff259a5fc7b4608b1ef2607da2bca04b8c51cf6c894587b6"
+checksum = "e6b032fa7963cd75d0d3fb5b9e4d62b1716bfdf7ab95f486a3edd58354177f83"
 dependencies = [
  "greentic-interfaces",
  "greentic-types",
@@ -1141,7 +1141,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-pack"
-version = "0.4.16"
+version = "0.4.19"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1165,6 +1165,19 @@ dependencies = [
  "time",
  "x509-parser",
  "zip",
+]
+
+[[package]]
+name = "greentic-secrets-spec"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "953b113cb908557d118ba426f157b02bade96133b7a279a23d9b85fc887c3e27"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
 ]
 
 [[package]]
@@ -1192,13 +1205,14 @@ dependencies = [
 
 [[package]]
 name = "greentic-types"
-version = "0.4.15"
+version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4054eef4f7b6acc6b41b27bd67bc5ad8a861725649b7dc7fc0aac962d25b47ef"
+checksum = "21f280aa6806f9e5c3c6269ab84ff7211edf0574d6fc04862bc7027ec4d7e2e3"
 dependencies = [
  "chrono",
  "ciborium",
  "fnv",
+ "greentic-secrets-spec",
  "greentic-telemetry",
  "greentic-types-macros",
  "indexmap",
@@ -1216,9 +1230,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-types-macros"
-version = "0.4.14"
+version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9e6ea6341eacef030d002f4839657c7b09eac74e0e1a4c5725e9e3c6c81d362"
+checksum = "cdaf1827c3301e665f0fcdacb50d785a24801f6873bd9fe04e5c6a91f858cf40"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1662,9 +1676,9 @@ checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "libz-rs-sys"
-version = "0.5.3"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b484ba8d4f775eeca644c452a56650e544bf7e617f1d170fe7298122ead5222"
+checksum = "15413ef615ad868d4d65dce091cb233b229419c7c0c4bcaa746c0901c49ff39c"
 dependencies = [
  "zlib-rs",
 ]
@@ -1977,7 +1991,7 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 
 [[package]]
 name = "pack_component"
-version = "0.4.16"
+version = "0.4.19"
 dependencies = [
  "greentic-interfaces-host",
  "serde",
@@ -1987,11 +2001,11 @@ dependencies = [
 
 [[package]]
 name = "pack_component_template"
-version = "0.4.16"
+version = "0.4.19"
 
 [[package]]
 name = "packc"
-version = "0.4.16"
+version = "0.4.19"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2008,6 +2022,7 @@ dependencies = [
  "pack_component_template",
  "pkcs8",
  "rand_core 0.6.4",
+ "regex",
  "schemars",
  "semver",
  "serde",
@@ -2305,14 +2320,15 @@ dependencies = [
 
 [[package]]
 name = "rcgen"
-version = "0.14.5"
+version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fae430c6b28f1ad601274e78b7dffa0546de0b73b4cd32f46723c0c2a16f7a5"
+checksum = "3ec0a99f2de91c3cddc84b37e7db80e4d96b743e05607f647eb236fc0455907f"
 dependencies = [
  "pem",
  "ring",
  "rustls-pki-types",
  "time",
+ "x509-parser",
  "yasna",
 ]
 
@@ -4035,6 +4051,7 @@ dependencies = [
  "lazy_static",
  "nom",
  "oid-registry",
+ "ring",
  "rusticata-macros",
  "thiserror",
  "time",
@@ -4168,9 +4185,9 @@ dependencies = [
 
 [[package]]
 name = "zlib-rs"
-version = "0.5.3"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36134c44663532e6519d7a6dfdbbe06f6f8192bde8ae9ed076e9b213f0e31df7"
+checksum = "51f936044d677be1a1168fae1d03b583a285a5dd9d8cbf7b24c23aa1fc775235"
 
 [[package]]
 name = "zopfli"

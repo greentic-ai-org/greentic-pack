@@ -6,6 +6,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use greentic_types::{EnvId, TenantCtx, TenantId};
 
+pub mod gui;
 pub mod lint;
 pub mod sign;
 pub mod verify;
@@ -28,6 +29,7 @@ pub struct Cli {
     pub command: Command,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Build a pack component and supporting artifacts
@@ -40,6 +42,9 @@ pub enum Command {
     Sign(self::sign::SignArgs),
     /// Verify a pack's manifest signature
     Verify(self::verify::VerifyArgs),
+    /// GUI-related tooling
+    #[command(subcommand)]
+    Gui(self::gui::GuiCommand),
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -67,6 +72,14 @@ pub struct BuildArgs {
     /// When set, the command validates input without writing artifacts
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Optional JSON file with additional secret requirements (migration bridge)
+    #[arg(long = "secrets-req", value_name = "FILE")]
+    pub secrets_req: Option<PathBuf>,
+
+    /// Default secret scope to apply when missing (dev-only), format: env/tenant[/team]
+    #[arg(long = "default-secret-scope", value_name = "ENV/TENANT[/TEAM]")]
+    pub default_secret_scope: Option<String>,
 }
 
 pub fn run() -> Result<()> {
@@ -91,6 +104,7 @@ pub fn run_with_cli(cli: Cli) -> Result<()> {
         Command::New(args) => new::handle(args, cli.json)?,
         Command::Sign(args) => self::sign::handle(args, cli.json)?,
         Command::Verify(args) => self::verify::handle(args, cli.json)?,
+        Command::Gui(cmd) => self::gui::handle(cmd, cli.json)?,
     }
 
     Ok(())

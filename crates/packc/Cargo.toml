@@ -46,6 +46,8 @@ greentic-pack = { version = "0.4", path = "../greentic-pack" }
 semver = { workspace = true }
 schemars = { workspace = true }
 zip = { workspace = true }
+regex = "1"
+tempfile = { workspace = true }
 
 [[bin]]
 name = "packc"
