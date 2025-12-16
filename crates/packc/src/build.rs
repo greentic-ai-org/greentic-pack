@@ -93,7 +93,7 @@ pub fn run(opts: &BuildOptions) -> Result<()> {
         opts.default_secret_scope.as_deref(),
     )?;
 
-    let build = assemble_manifest(&config, &opts.pack_dir)?;
+    let build = assemble_manifest(&config, &opts.pack_dir, &secret_requirements)?;
     let manifest_bytes = encode_pack_manifest(&build.manifest)?;
     info!(len = manifest_bytes.len(), "encoded manifest.cbor");
 
@@ -146,7 +146,11 @@ struct AssetFile {
     source: PathBuf,
 }
 
-fn assemble_manifest(config: &PackConfig, pack_root: &Path) -> Result<BuildProducts> {
+fn assemble_manifest(
+    config: &PackConfig,
+    pack_root: &Path,
+    secret_requirements: &[SecretRequirement],
+) -> Result<BuildProducts> {
     let components = build_components(&config.components)?;
     let flows = build_flows(&config.flows)?;
     let dependencies = build_dependencies(&config.dependencies)?;
@@ -163,6 +167,7 @@ fn assemble_manifest(config: &PackConfig, pack_root: &Path) -> Result<BuildProdu
         flows,
         dependencies,
         capabilities: derive_pack_capabilities(&components),
+        secret_requirements: secret_requirements.to_vec(),
         signatures: PackSignatures::default(),
     };
 
@@ -841,6 +846,7 @@ mod tests {
             }],
             dependencies: Vec::new(),
             capabilities: Vec::new(),
+            secret_requirements: Vec::new(),
             signatures: PackSignatures::default(),
         }
     }

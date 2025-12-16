@@ -1,9 +1,10 @@
 #![forbid(unsafe_code)]
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
-use greentic_config::{CliOverrides, ConfigResolver, ResolvedConfig};
+use anyhow::{Context, Result};
+use greentic_config::{ConfigLayer, ConfigResolver, ResolvedConfig};
 use greentic_types::ConnectionKind;
 use std::sync::Arc;
 
@@ -25,12 +26,10 @@ impl RuntimeState {
     }
 
     pub fn network_policy(&self) -> NetworkPolicy {
-        if self.resolved.config.network.offline
-            || matches!(
-                self.resolved.config.environment.connection,
-                Some(ConnectionKind::Offline)
-            )
-        {
+        if matches!(
+            self.resolved.config.environment.connection,
+            Some(ConnectionKind::Offline)
+        ) {
             NetworkPolicy::Offline
         } else {
             NetworkPolicy::Online
@@ -64,17 +63,14 @@ pub fn resolve_runtime(
     }
 
     if let Some(path) = cli_override {
-        resolver = resolver.with_cli_overrides(CliOverrides {
-            config_path: Some(path.to_path_buf()),
-            ..Default::default()
-        });
+        let layer = load_cli_override_layer(path)?;
+        resolver = resolver.with_cli_overrides(layer);
     }
 
     let mut resolved = resolver.load()?;
 
     if cli_offline {
         resolved.config.environment.connection = Some(ConnectionKind::Offline);
-        resolved.config.network.offline = true;
         resolved
             .warnings
             .push("offline forced by CLI --offline flag".to_string());
@@ -85,4 +81,21 @@ pub fn resolve_runtime(
     }
 
     Ok(Arc::new(RuntimeState { resolved }))
+}
+
+fn load_cli_override_layer(path: &Path) -> Result<ConfigLayer> {
+    let contents = fs::read_to_string(path)
+        .with_context(|| format!("failed to read config override {}", path.display()))?;
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default();
+    let layer = if ext.eq_ignore_ascii_case("json") {
+        serde_json::from_str(&contents)
+            .with_context(|| format!("{} is not valid JSON", path.display()))?
+    } else {
+        toml::from_str(&contents)
+            .with_context(|| format!("{} is not valid TOML", path.display()))?
+    };
+    Ok(layer)
 }
