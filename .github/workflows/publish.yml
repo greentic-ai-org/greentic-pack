@@ -88,13 +88,17 @@ jobs:
         run: |
           set -euo pipefail
           cargo build --release --target ${{ matrix.target }} --package greentic-pack --bins
+          cargo build --release --target ${{ matrix.target }} --package packc --bins
           out_dir="target/${{ matrix.target }}/release"
           mkdir -p dist
           tar -czf "dist/greentic-pack-${{ matrix.target }}.tgz" -C "${out_dir}" greentic-pack gtpack-inspect
+          tar -czf "dist/packc-${{ matrix.target }}.tgz" -C "${out_dir}" packc
       - name: Upload binstall artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/greentic-pack-${{ matrix.target }}.tgz
+          files: |
+            dist/greentic-pack-${{ matrix.target }}.tgz
+            dist/packc-${{ matrix.target }}.tgz
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TITLE }}
           target_commitish: ${{ github.sha }}
