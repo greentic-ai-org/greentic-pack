@@ -16,7 +16,7 @@ Publishing flow:
    fails, yank the partial upload and bump the patch version before re-tagging.
 4. Tag pushes also build release binaries for `greentic-pack` and upload them
    to the corresponding GitHub release with `cargo-binstall` metadata, so users
-   can install via `cargo binstall greentic-pack`.
+   can install via `cargo binstall greentic-pack packc`.
 
 Local dry-run before tagging:
 

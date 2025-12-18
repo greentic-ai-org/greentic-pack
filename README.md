@@ -14,8 +14,11 @@ Install the prebuilt CLI binaries with `cargo-binstall`:
 
 ```bash
 cargo install cargo-binstall   # run once
-cargo binstall greentic-pack
+cargo binstall greentic-pack packc
 ```
+
+This installs the `greentic-pack` and `gtpack-inspect` CLIs plus `packc` in one
+shot.
 
 ## Repository layout
 

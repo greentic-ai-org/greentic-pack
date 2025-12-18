@@ -9,11 +9,11 @@ Fetch the prebuilt release binaries via `cargo-binstall`:
 
 ```bash
 cargo install cargo-binstall   # run once
-cargo binstall greentic-pack
+cargo binstall greentic-pack packc
 ```
 
-The package bundles both `greentic-pack` and `gtpack-inspect`; once installed
-they're available on your `PATH`.
+The install brings in `greentic-pack`, `gtpack-inspect`, and `packc`; once
+installed they're available on your `PATH`.
 
 ## Workflow overview
 
