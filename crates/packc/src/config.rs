@@ -12,6 +12,8 @@ pub struct PackConfig {
     pub kind: String,
     pub publisher: String,
     #[serde(default)]
+    pub bootstrap: Option<BootstrapConfig>,
+    #[serde(default)]
     pub components: Vec<ComponentConfig>,
     #[serde(default)]
     pub dependencies: Vec<DependencyConfig>,
@@ -70,6 +72,16 @@ pub struct DependencyConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct AssetConfig {
     pub path: PathBuf,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BootstrapConfig {
+    #[serde(default)]
+    pub install_flow: Option<String>,
+    #[serde(default)]
+    pub upgrade_flow: Option<String>,
+    #[serde(default)]
+    pub installer_component: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

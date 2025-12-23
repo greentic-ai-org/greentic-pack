@@ -14,7 +14,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 rust-version = "1.89"
-version = "0.4.24"
+version = "0.4.25"
 license = "MIT"
 
 [workspace.dependencies]
@@ -28,7 +28,7 @@ sha2 = "0.10"
 hex = "0.4"
 semver = { version = "1", features = ["serde"] }
 blake3 = "1"
-zip = { version = "6.0.0", default-features = false, features = ["deflate"] }
+zip = { version = "7.0.0", default-features = false, features = ["deflate"] }
 walkdir = "2"
 thiserror = "2"
 time = { version = "0.3", features = ["macros", "serde", "formatting", "parsing"] }

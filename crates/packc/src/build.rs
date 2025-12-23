@@ -5,7 +5,7 @@ use crate::runtime::RuntimeContext;
 use anyhow::{Context, Result, anyhow};
 use greentic_flow::compile_ygtc_str;
 use greentic_types::{
-    ComponentCapability, ComponentConfigurators, ComponentId, ComponentManifest,
+    BootstrapSpec, ComponentCapability, ComponentConfigurators, ComponentId, ComponentManifest,
     ComponentOperation, Flow, FlowId, PackDependency, PackFlowEntry, PackId, PackKind,
     PackManifest, PackSignatures, SecretRequirement, SecretScope, SemverReq, encode_pack_manifest,
 };
@@ -155,6 +155,8 @@ fn assemble_manifest(
     let flows = build_flows(&config.flows)?;
     let dependencies = build_dependencies(&config.dependencies)?;
     let assets = collect_assets(&config.assets, pack_root)?;
+    let component_manifests: Vec<_> = components.iter().map(|c| c.0.clone()).collect();
+    let bootstrap = build_bootstrap(config, &flows, &component_manifests)?;
 
     let manifest = PackManifest {
         schema_version: "pack-v1".to_string(),
@@ -163,12 +165,13 @@ fn assemble_manifest(
             .context("invalid pack version (expected semver)")?,
         kind: map_kind(&config.kind)?,
         publisher: config.publisher.clone(),
-        components: components.iter().map(|c| c.0.clone()).collect(),
+        components: component_manifests,
         flows,
         dependencies,
         capabilities: derive_pack_capabilities(&components),
         secret_requirements: secret_requirements.to_vec(),
         signatures: PackSignatures::default(),
+        bootstrap,
     };
 
     Ok(BuildProducts {
@@ -243,6 +246,60 @@ fn convert_configurators(cfg: &ComponentConfig) -> Result<Option<ComponentConfig
     };
 
     Ok(Some(ComponentConfigurators { basic, full }))
+}
+
+fn build_bootstrap(
+    config: &PackConfig,
+    flows: &[PackFlowEntry],
+    components: &[ComponentManifest],
+) -> Result<Option<BootstrapSpec>> {
+    let Some(raw) = config.bootstrap.as_ref() else {
+        return Ok(None);
+    };
+
+    let flow_ids: BTreeSet<_> = flows.iter().map(|flow| flow.id.to_string()).collect();
+    let component_ids: BTreeSet<_> = components.iter().map(|c| c.id.to_string()).collect();
+
+    let mut spec = BootstrapSpec::default();
+
+    if let Some(install_flow) = &raw.install_flow {
+        if !flow_ids.contains(install_flow) {
+            anyhow::bail!(
+                "bootstrap.install_flow references unknown flow {}",
+                install_flow
+            );
+        }
+        spec.install_flow = Some(install_flow.clone());
+    }
+
+    if let Some(upgrade_flow) = &raw.upgrade_flow {
+        if !flow_ids.contains(upgrade_flow) {
+            anyhow::bail!(
+                "bootstrap.upgrade_flow references unknown flow {}",
+                upgrade_flow
+            );
+        }
+        spec.upgrade_flow = Some(upgrade_flow.clone());
+    }
+
+    if let Some(component) = &raw.installer_component {
+        if !component_ids.contains(component) {
+            anyhow::bail!(
+                "bootstrap.installer_component references unknown component {}",
+                component
+            );
+        }
+        spec.installer_component = Some(component.clone());
+    }
+
+    if spec.install_flow.is_none()
+        && spec.upgrade_flow.is_none()
+        && spec.installer_component.is_none()
+    {
+        return Ok(None);
+    }
+
+    Ok(Some(spec))
 }
 
 fn build_flows(configs: &[FlowConfig]) -> Result<Vec<PackFlowEntry>> {
@@ -639,6 +696,7 @@ fn write_secret_requirements_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::BootstrapConfig;
     use greentic_types::flow::FlowKind;
     use serde_json::json;
     use std::io::Read;
@@ -669,6 +727,46 @@ mod tests {
         }];
         let collected = collect_assets(&assets, &root).expect("collect assets");
         assert_eq!(collected[0].logical_path, "assets/foo.txt");
+    }
+
+    #[test]
+    fn build_bootstrap_requires_known_references() {
+        let config = pack_config_with_bootstrap(BootstrapConfig {
+            install_flow: Some("flow.a".to_string()),
+            upgrade_flow: None,
+            installer_component: Some("component.a".to_string()),
+        });
+        let flows = vec![flow_entry("flow.a")];
+        let components = vec![minimal_component_manifest("component.a")];
+
+        let bootstrap = build_bootstrap(&config, &flows, &components)
+            .expect("bootstrap populated")
+            .expect("bootstrap present");
+
+        assert_eq!(bootstrap.install_flow.as_deref(), Some("flow.a"));
+        assert_eq!(bootstrap.upgrade_flow, None);
+        assert_eq!(
+            bootstrap.installer_component.as_deref(),
+            Some("component.a")
+        );
+    }
+
+    #[test]
+    fn build_bootstrap_rejects_unknown_flow() {
+        let config = pack_config_with_bootstrap(BootstrapConfig {
+            install_flow: Some("missing".to_string()),
+            upgrade_flow: None,
+            installer_component: Some("component.a".to_string()),
+        });
+        let flows = vec![flow_entry("flow.a")];
+        let components = vec![minimal_component_manifest("component.a")];
+
+        let err = build_bootstrap(&config, &flows, &components).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("bootstrap.install_flow references unknown flow"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
@@ -815,6 +913,51 @@ mod tests {
         assert!(req.examples.contains(&"example".to_string()));
     }
 
+    fn pack_config_with_bootstrap(bootstrap: BootstrapConfig) -> PackConfig {
+        PackConfig {
+            pack_id: "demo.pack".to_string(),
+            version: "1.0.0".to_string(),
+            kind: "application".to_string(),
+            publisher: "demo".to_string(),
+            bootstrap: Some(bootstrap),
+            components: Vec::new(),
+            dependencies: Vec::new(),
+            flows: Vec::new(),
+            assets: Vec::new(),
+        }
+    }
+
+    fn flow_entry(id: &str) -> PackFlowEntry {
+        let flow: Flow = serde_json::from_value(json!({
+            "schema_version": "flow/v1",
+            "id": id,
+            "kind": "messaging"
+        }))
+        .expect("flow json");
+
+        PackFlowEntry {
+            id: FlowId::new(id).expect("flow id"),
+            kind: FlowKind::Messaging,
+            flow,
+            tags: Vec::new(),
+            entrypoints: Vec::new(),
+        }
+    }
+
+    fn minimal_component_manifest(id: &str) -> ComponentManifest {
+        serde_json::from_value(json!({
+            "id": id,
+            "version": "1.0.0",
+            "supports": [],
+            "world": "greentic:demo@1.0.0",
+            "profiles": { "default": "default", "supported": ["default"] },
+            "capabilities": { "wasi": {}, "host": {} },
+            "operations": [],
+            "resources": {}
+        }))
+        .expect("component manifest")
+    }
+
     fn manifest_with_dev_flow() -> ComponentManifest {
         serde_json::from_str(include_str!(
             "../tests/fixtures/component_manifest_with_dev_flows.json"
@@ -848,6 +991,7 @@ mod tests {
             capabilities: Vec::new(),
             secret_requirements: Vec::new(),
             signatures: PackSignatures::default(),
+            bootstrap: None,
         }
     }
 }
