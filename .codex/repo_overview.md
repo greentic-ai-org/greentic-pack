@@ -7,7 +7,7 @@
 ## 2. Main Components and Functionality
 - **Path:** `crates/packc`  
   **Role:** Builder CLI for authoring and validating Greentic packs.  
-  **Key functionality:** Validates `pack.yaml`, enforces pack version/kind constraints (including `distribution-bundle`), loads flow and template assets, builds `.gtpack` archives with manifests and SBOM entries, generates Wasm components via `pack_component_template`, composes MCP router + adapter components, supports component descriptors (including `kind: software` with arbitrary artifact paths/types), and handles signing/verification of manifests. Provides `packc build`, `packc new` scaffolding, `packc sign/verify`, and telemetry setup; exposes library helpers (`BuildArgs`, signing APIs).
+  **Key functionality:** Validates `pack.yaml`, enforces pack version/kind constraints (including `distribution-bundle`), loads flow and template assets, builds `.gtpack` archives with manifests and SBOM entries, generates Wasm components via `pack_component_template`, composes MCP router + adapter components, supports component descriptors (including `kind: software` with arbitrary artifact paths/types), and handles signing/verification of manifests. Provides `packc build`, `packc new` scaffolding, `packc sign/verify`, `packc inspect` (reads `.gtpack` or source dir and renders manifest summary/JSON), and telemetry setup; exposes library helpers (`BuildArgs`, signing APIs).
 
 - **Path:** `crates/greentic-pack`  
   **Role:** Library + CLI for inspecting packs and producing deployment plans.  

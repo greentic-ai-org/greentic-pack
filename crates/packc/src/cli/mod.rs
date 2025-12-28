@@ -8,6 +8,7 @@ use greentic_types::{EnvId, TenantCtx, TenantId};
 
 pub mod config;
 pub mod gui;
+pub mod inspect;
 pub mod lint;
 pub mod sign;
 pub mod verify;
@@ -58,6 +59,8 @@ pub enum Command {
     /// GUI-related tooling
     #[command(subcommand)]
     Gui(self::gui::GuiCommand),
+    /// Inspect a pack manifest from a .gtpack or source directory
+    Inspect(self::inspect::InspectArgs),
     /// Inspect resolved configuration (provenance and warnings)
     Config(self::config::ConfigArgs),
 }
@@ -130,6 +133,7 @@ pub fn run_with_cli(cli: Cli) -> Result<()> {
         Command::Sign(args) => self::sign::handle(args, cli.json)?,
         Command::Verify(args) => self::verify::handle(args, cli.json)?,
         Command::Gui(cmd) => self::gui::handle(cmd, cli.json, &runtime)?,
+        Command::Inspect(args) => self::inspect::handle(args, cli.json, &runtime)?,
         Command::Config(args) => self::config::handle(args, cli.json, &runtime)?,
     }
 

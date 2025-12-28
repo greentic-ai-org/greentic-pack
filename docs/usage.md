@@ -71,6 +71,26 @@ Usage: packc build --in <DIR> [--out <FILE>] [--manifest <FILE>]
 Use `packc config` to print the resolved configuration, provenance, and any
 warnings (add `--json` for machine-readable output).
 
+### Inspecting packs
+
+`packc inspect` reads either a `.gtpack` archive (`--pack`) or a source
+directory (`--in`, containing `pack.yaml`). Source mode shells out to
+`packc build --gtpack-out` in a temp dir to guarantee parity with archive
+inspection. Examples:
+
+```bash
+# Inspect a built archive
+packc inspect --pack dist/demo.gtpack --json
+
+# Inspect a source tree without prebuilding artifacts
+packc inspect --in examples/weather-demo
+```
+
+Output defaults to a human-readable summary (pack id/version/name, messaging
+adapters, component count, warnings). Pass `--json` to emit the full manifest as
+pretty JSON. Signature verification uses the dev policy when inspecting
+archives.
+
 ### GUI pack converter (Loveable)
 
 `packc gui loveable-convert` turns a Loveable-generated app into a GUI `.gtpack`.
