@@ -12,6 +12,13 @@ use tracing::info;
 use crate::config::{ComponentConfig, FlowKindLabel, PackConfig};
 use crate::path_safety::normalize_under_root;
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ComponentUpdateStats {
+    pub added: usize,
+    pub removed: usize,
+    pub total: usize,
+}
+
 #[derive(Debug, Parser)]
 pub struct ComponentsArgs {
     /// Root directory of the pack (must contain pack.yaml)
@@ -32,12 +39,51 @@ pub fn handle(args: ComponentsArgs, json: bool) -> Result<()> {
     )
     .with_context(|| format!("{} is not a valid pack.yaml", pack_yaml.display()))?;
 
-    let discovered = discover_components(&components_dir)?;
+    let stats = sync_components(&mut config, &components_dir)?;
+
+    let serialized = serde_yaml_bw::to_string(&config)?;
+    fs::write(&pack_yaml, serialized)?;
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "status": "ok",
+                "pack_dir": pack_dir,
+                "components": {
+                    "added": stats.added,
+                    "removed": stats.removed,
+                    "total": stats.total,
+                }
+            }))?
+        );
+    } else {
+        info!(
+            added = stats.added,
+            removed = stats.removed,
+            total = stats.total,
+            "updated pack components"
+        );
+        println!(
+            "components updated (added: {}, removed: {}, total: {})",
+            stats.added, stats.removed, stats.total
+        );
+    }
+
+    Ok(())
+}
+
+pub fn sync_components(
+    config: &mut PackConfig,
+    components_dir: &Path,
+) -> Result<ComponentUpdateStats> {
+    let discovered = discover_components(components_dir)?;
     let initial_components = config.components.len();
     let mut preserved = 0usize;
     let mut added = 0usize;
 
-    let (mut existing_by_id, existing_by_path) = index_components(config.components);
+    let (mut existing_by_id, existing_by_path) =
+        index_components(std::mem::take(&mut config.components));
     let mut updated = Vec::new();
 
     for file_name in discovered {
@@ -58,7 +104,13 @@ pub fn handle(args: ComponentsArgs, json: bool) -> Result<()> {
             .cloned()
             .unwrap_or_else(|| stem.to_string());
 
-        let mut component = if let Some(existing) = existing_by_id.remove(&chosen_id) {
+        let mut component = if let Some(existing) = existing_by_path
+            .get(&path_key)
+            .and_then(|id| existing_by_id.remove(id))
+        {
+            preserved += 1;
+            existing
+        } else if let Some(existing) = existing_by_id.remove(&chosen_id) {
             preserved += 1;
             existing
         } else {
@@ -66,6 +118,7 @@ pub fn handle(args: ComponentsArgs, json: bool) -> Result<()> {
             default_component(chosen_id.clone(), rel_path.clone())
         };
 
+        component.id = chosen_id;
         component.wasm = rel_path;
         updated.push(component);
     }
@@ -74,36 +127,12 @@ pub fn handle(args: ComponentsArgs, json: bool) -> Result<()> {
     config.components = updated;
 
     let removed = initial_components.saturating_sub(preserved);
-    let serialized = serde_yaml_bw::to_string(&config)?;
-    fs::write(&pack_yaml, serialized)?;
 
-    if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "status": "ok",
-                "pack_dir": pack_dir,
-                "components": {
-                    "added": added,
-                    "removed": removed,
-                    "total": config.components.len(),
-                }
-            }))?
-        );
-    } else {
-        info!(
-            added,
-            removed,
-            total = config.components.len(),
-            "updated pack components"
-        );
-        println!(
-            "components updated (added: {added}, removed: {removed}, total: {})",
-            config.components.len()
-        );
-    }
-
-    Ok(())
+    Ok(ComponentUpdateStats {
+        added,
+        removed,
+        total: config.components.len(),
+    })
 }
 
 fn discover_components(dir: &Path) -> Result<Vec<std::ffi::OsString>> {

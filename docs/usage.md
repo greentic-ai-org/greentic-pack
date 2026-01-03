@@ -125,15 +125,13 @@ and flow layout:
 ```bash
 packc new hello-pack --dir ./hello-pack
 cd hello-pack
-./scripts/build.sh
+packc build --in . --dry-run
 ```
 
-The command writes `pack.yaml`, `flows/welcome.ygtc`, `.gitignore`, a helper
-script under `scripts/build.sh`, and a `dist/` output directory. Passing
-`--sign` also drops a development Ed25519 keypair under `keys/` (set
-`GREENTIC_DEV_SEED` for deterministic output). Re-run `./scripts/build.sh` to
-generate `dist/<id>.wasm`, `dist/manifest.cbor`, `dist/sbom.cdx.json`, and
-`dist/<id>.gtpack` (matching your pack id).
+The command writes `pack.yaml`, `flows/main.ygtc`, and an empty
+`components/` directory (no stub `.wasm` is generated). Populate
+`components/` with your compiled Wasm components and add additional flows as
+needed, then run `packc update --in .` to refresh `pack.yaml`.
 
 ## Example build
 

@@ -12,6 +12,7 @@ pub mod gui;
 pub mod inspect;
 pub mod lint;
 pub mod sign;
+pub mod update;
 pub mod verify;
 
 use crate::telemetry::set_current_tenant_ctx;
@@ -53,6 +54,8 @@ pub enum Command {
     Lint(self::lint::LintArgs),
     /// Sync pack.yaml components with files under components/
     Components(self::components::ComponentsArgs),
+    /// Sync pack.yaml components and flows with files under the pack root
+    Update(self::update::UpdateArgs),
     /// Scaffold a new pack directory
     New(new::NewArgs),
     /// Sign a pack manifest using an Ed25519 private key
@@ -133,6 +136,7 @@ pub fn run_with_cli(cli: Cli) -> Result<()> {
         Command::Build(args) => build::run(&build::BuildOptions::from_args(args, &runtime)?)?,
         Command::Lint(args) => self::lint::handle(args, cli.json)?,
         Command::Components(args) => self::components::handle(args, cli.json)?,
+        Command::Update(args) => self::update::handle(args, cli.json)?,
         Command::New(args) => new::handle(args, cli.json)?,
         Command::Sign(args) => self::sign::handle(args, cli.json)?,
         Command::Verify(args) => self::verify::handle(args, cli.json)?,
