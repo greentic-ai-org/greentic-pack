@@ -50,6 +50,7 @@ schemars = { workspace = true }
 zip = { workspace = true }
 regex = "1"
 tempfile = { workspace = true }
+wit-component = "0.243"
 
 [[bin]]
 name = "packc"

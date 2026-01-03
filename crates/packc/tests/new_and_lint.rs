@@ -86,6 +86,14 @@ fn components_command_reflects_directory() {
     let components_dir = pack_dir.join("components");
     fs::write(components_dir.join("alpha.wasm"), [0x00, 0x61, 0x73, 0x6d]).unwrap();
     fs::write(components_dir.join("beta.wasm"), [0x00, 0x61, 0x73, 0x6d]).unwrap();
+    let nested_dir = components_dir.join("nested");
+    let nested_wasm_dir = nested_dir.join("out").join("wasm");
+    fs::create_dir_all(&nested_wasm_dir).unwrap();
+    fs::write(
+        nested_wasm_dir.join("component.wasm"),
+        [0x00, 0x61, 0x73, 0x6d],
+    )
+    .unwrap();
 
     let pack_yaml = pack_dir.join("pack.yaml");
     let mut cfg: PackConfig =
@@ -122,7 +130,7 @@ fn components_command_reflects_directory() {
     let cfg: PackConfig =
         serde_yaml_bw::from_str(&fs::read_to_string(&pack_yaml).unwrap()).unwrap();
     let ids: Vec<_> = cfg.components.iter().map(|c| c.id.as_str()).collect();
-    assert_eq!(ids, vec!["alpha", "beta"]);
+    assert_eq!(ids, vec!["alpha", "beta", "nested"]);
 
     let wasm_paths: Vec<_> = cfg
         .components
@@ -131,6 +139,10 @@ fn components_command_reflects_directory() {
         .collect();
     assert_eq!(
         wasm_paths,
-        vec!["components/alpha.wasm", "components/beta.wasm"]
+        vec![
+            "components/alpha.wasm",
+            "components/beta.wasm",
+            "components/nested/out/wasm/component.wasm"
+        ]
     );
 }

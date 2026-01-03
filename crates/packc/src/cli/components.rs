@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use greentic_types::{ComponentCapabilities, ComponentProfiles};
-use tracing::info;
+use tracing::{info, warn};
+use wit_component::DecodedWasm;
 
 use crate::config::{ComponentConfig, FlowKindLabel, PackConfig};
 use crate::path_safety::normalize_under_root;
@@ -17,6 +18,13 @@ pub struct ComponentUpdateStats {
     pub added: usize,
     pub removed: usize,
     pub total: usize,
+}
+
+#[derive(Debug)]
+struct DiscoveredComponent {
+    rel_wasm_path: PathBuf,
+    abs_wasm_path: PathBuf,
+    id_hint: String,
 }
 
 #[derive(Debug, Parser)]
@@ -86,19 +94,10 @@ pub fn sync_components(
         index_components(std::mem::take(&mut config.components));
     let mut updated = Vec::new();
 
-    for file_name in discovered {
-        let rel_path = PathBuf::from("components").join(&file_name);
+    for discovered in discovered {
+        let rel_path = discovered.rel_wasm_path;
         let path_key = path_key(&rel_path);
-        let stem = Path::new(&file_name)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| {
-                anyhow!(
-                    "invalid component filename: {}",
-                    Path::new(&file_name).display()
-                )
-            })?;
-
+        let stem = discovered.id_hint;
         let chosen_id = existing_by_path
             .get(&path_key)
             .cloned()
@@ -118,6 +117,12 @@ pub fn sync_components(
             default_component(chosen_id.clone(), rel_path.clone())
         };
 
+        if let Some(world) = infer_component_world(&discovered.abs_wasm_path) {
+            if component.world.trim().is_empty() || component.world == "greentic:component/stub" {
+                component.world = world;
+            }
+        }
+
         component.id = chosen_id;
         component.wasm = rel_path;
         updated.push(component);
@@ -135,26 +140,139 @@ pub fn sync_components(
     })
 }
 
-fn discover_components(dir: &Path) -> Result<Vec<std::ffi::OsString>> {
-    let mut names = Vec::new();
+fn discover_components(dir: &Path) -> Result<Vec<DiscoveredComponent>> {
+    let mut components = Vec::new();
 
     if dir.exists() {
         for entry in fs::read_dir(dir)
             .with_context(|| format!("failed to list components in {}", dir.display()))?
         {
             let entry = entry?;
-            if !entry.file_type()?.is_file() {
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+
+            if file_type.is_file() {
+                if path.extension() != Some(std::ffi::OsStr::new("wasm")) {
+                    continue;
+                }
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .ok_or_else(|| anyhow!("invalid component filename: {}", path.display()))?;
+                components.push(DiscoveredComponent {
+                    rel_wasm_path: PathBuf::from("components").join(
+                        path.file_name()
+                            .ok_or_else(|| anyhow!("invalid component filename"))?,
+                    ),
+                    abs_wasm_path: path.clone(),
+                    id_hint: stem.to_string(),
+                });
                 continue;
             }
-            if entry.path().extension() != Some(std::ffi::OsStr::new("wasm")) {
-                continue;
+
+            if file_type.is_dir() {
+                let mut wasm_files = collect_wasm_files(&path)?;
+                if wasm_files.is_empty() {
+                    continue;
+                }
+
+                let chosen = wasm_files.iter().find(|p| {
+                    p.file_name()
+                        .map(|n| n == std::ffi::OsStr::new("component.wasm"))
+                        .unwrap_or(false)
+                });
+                let wasm_path = chosen.cloned().unwrap_or_else(|| {
+                    if wasm_files.len() == 1 {
+                        wasm_files[0].clone()
+                    } else {
+                        wasm_files.sort();
+                        wasm_files[0].clone()
+                    }
+                });
+
+                let dir_name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .ok_or_else(|| anyhow!("invalid component directory name: {}", path.display()))?
+                    .to_string();
+
+                let wasm_file_name = wasm_path
+                    .strip_prefix(dir)
+                    .unwrap_or(&wasm_path)
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/");
+
+                components.push(DiscoveredComponent {
+                    rel_wasm_path: PathBuf::from("components").join(&wasm_file_name),
+                    abs_wasm_path: wasm_path,
+                    id_hint: dir_name,
+                });
             }
-            names.push(entry.file_name());
         }
     }
 
-    names.sort();
-    Ok(names)
+    components.sort_by(|a, b| a.id_hint.cmp(&b.id_hint));
+    Ok(components)
+}
+
+fn collect_wasm_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut wasm_files = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+
+    while let Some(current) = stack.pop() {
+        for entry in fs::read_dir(&current)
+            .with_context(|| format!("failed to list components in {}", current.display()))?
+        {
+            let entry = entry?;
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if file_type.is_file() && path.extension() == Some(std::ffi::OsStr::new("wasm")) {
+                wasm_files.push(path);
+            }
+        }
+    }
+
+    Ok(wasm_files)
+}
+
+fn infer_component_world(path: &Path) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    let decoded = match wit_component::decode(&bytes) {
+        Ok(decoded) => decoded,
+        Err(err) => {
+            warn!(
+                path = %path.display(),
+                "failed to decode component for world inference: {err}"
+            );
+            return None;
+        }
+    };
+
+    let (resolve, world_id) = match decoded {
+        DecodedWasm::Component(resolve, world) => (resolve, world),
+        DecodedWasm::WitPackage(..) => return None,
+    };
+
+    let world = &resolve.worlds[world_id];
+    let pkg_id = match world.package {
+        Some(id) => id,
+        None => return None,
+    };
+    let pkg = &resolve.packages[pkg_id];
+
+    let mut label = format!("{}:{}/{}", pkg.name.namespace, pkg.name.name, world.name);
+    if let Some(version) = &pkg.name.version {
+        label.push('@');
+        label.push_str(&version.to_string());
+    }
+
+    Some(label)
 }
 
 fn index_components(
