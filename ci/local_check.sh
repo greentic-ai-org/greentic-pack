@@ -63,6 +63,18 @@ run_or_skip() {
   exit $status
 }
 
+install_greentic_component() {
+  if need greentic-component; then
+    return 0
+  fi
+  require_tool cargo-binstall "install greentic-component via cargo-binstall" || return $?
+  if ! can_reach_cratesio; then
+    echo "[skip] greentic-component install (crates.io unreachable)"
+    return 0
+  fi
+  cargo binstall greentic-component -y
+}
+
 fmt_check() {
   require_tool cargo "cargo fmt" || return $?
   cargo fmt --all -- --check
@@ -168,6 +180,9 @@ main() {
 
   print_version rustc
   print_version cargo
+
+  step "Install greentic-component"
+  run_or_skip "greentic-component install" install_greentic_component
 
   step "Formatting"
   run_or_skip "cargo fmt" fmt_check
