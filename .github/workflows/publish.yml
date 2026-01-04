@@ -16,6 +16,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
+      - name: Install greentic-component (for E2E tests)
+        run: |
+          set -euo pipefail
+          cargo install cargo-binstall --locked || true
+          cargo binstall greentic-component -y
       - name: Lint & Test
         run: |
           cargo fmt --all -- --check
