@@ -18,11 +18,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install wasm32-wasip2 target
         run: rustup target add wasm32-wasip2
-      - name: Install greentic-component (for E2E tests)
+      - name: Install greentic tooling (for E2E tests)
         run: |
           set -euo pipefail
           cargo install cargo-binstall --locked || true
-          cargo binstall greentic-component -y
+          cargo binstall greentic-component greentic-dev -y
       - name: Lint & Test
         run: |
           cargo fmt --all -- --check
