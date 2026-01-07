@@ -8,13 +8,14 @@ members = [
 exclude = [
     "examples/weather-demo/.packc/pack_component",
     "examples/qa-demo/.packc/pack_component",
+    "crates/packc/tests/router_echo",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2024"
 rust-version = "1.89"
-version = "0.4.37"
+version = "0.4.38"
 license = "MIT"
 
 [workspace.dependencies]

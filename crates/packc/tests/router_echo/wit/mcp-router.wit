@@ -1,0 +1,124 @@
+package wasix:mcp@25.6.18;
+
+interface router {
+  type json = string;
+
+  record tool-annotations {
+    read-only: option<bool>,
+    destructive: option<bool>,
+    streaming: option<bool>,
+    experimental: option<bool>,
+  }
+
+  record meta-entry {
+    key: string,
+    value: json,
+  }
+
+  record tool {
+    name: string,
+    title: option<string>,
+    description: string,
+    input-schema: json,
+    output-schema: option<json>,
+    annotations: option<tool-annotations>,
+    meta: option<list<meta-entry>>,
+  }
+
+  enum role {
+    user,
+    assistant,
+  }
+
+  type datetime = string;
+
+  record annotations {
+    audience: option<list<role>>,
+    priority: option<f32>,
+    timestamp: option<datetime>,
+  }
+
+  record text-content {
+    text: string,
+    annotations: option<annotations>,
+  }
+
+  record image-content {
+    data: string,
+    mime-type: string,
+    annotations: option<annotations>,
+  }
+
+  record audio-content {
+    data: string,
+    mime-type: string,
+    annotations: option<annotations>,
+  }
+
+  record resource-link-content {
+    uri: string,
+    title: option<string>,
+    description: option<string>,
+    mime-type: option<string>,
+    annotations: option<annotations>,
+  }
+
+  record embedded-resource {
+    uri: string,
+    title: option<string>,
+    description: option<string>,
+    mime-type: option<string>,
+    data: string,
+    annotations: option<annotations>,
+  }
+
+  variant content-block {
+    text(text-content),
+    image(image-content),
+    audio(audio-content),
+    resource-link(resource-link-content),
+    embedded-resource(embedded-resource),
+  }
+
+  record progress-notification {
+    progress: option<f32>,
+    message: option<string>,
+    annotations: option<annotations>,
+  }
+
+  record tool-result {
+    content: list<content-block>,
+    structured-content: option<json>,
+    progress: option<list<progress-notification>>,
+    meta: option<list<meta-entry>>,
+    is-error: option<bool>,
+  }
+
+  record elicitation-request {
+    title: option<string>,
+    message: string,
+    schema: json,
+    annotations: option<annotations>,
+    meta: option<list<meta-entry>>,
+  }
+
+  variant response {
+    completed(tool-result),
+    elicit(elicitation-request),
+  }
+
+  variant tool-error {
+    invalid-parameters(string),
+    execution-error(string),
+    schema-error(string),
+    not-found(string),
+  }
+
+  list-tools: func() -> list<tool>;
+
+  call-tool: func(tool-name: string, arguments: json) -> result<response, tool-error>;
+}
+
+world mcp-router {
+  export router;
+}

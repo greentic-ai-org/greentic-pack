@@ -1,0 +1,12 @@
+id: main
+type: messaging
+start: hello
+nodes:
+  hello:
+    component.exec:
+      component: ai.greentic.fixture
+      operation: handle_message
+      input:
+        input: "hi"
+    routing:
+      - out: true

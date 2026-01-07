@@ -61,3 +61,5 @@ assert_cmd = "2"
 indoc = "2"
 tempfile = "3"
 blake3 = { workspace = true }
+wasmtime = "40"
+wasmtime-wasi = "40"
