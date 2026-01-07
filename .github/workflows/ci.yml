@@ -29,6 +29,8 @@ jobs:
       - name: Install greentic tooling
         run: |
           cargo binstall greentic-dev -y
+          # Required by mcp_composition tests
+          cargo binstall wasm-tools -y --force
           # E2E component_pack tests require greentic-component; ensure it is present explicitly.
           cargo binstall greentic-component -y --force
 

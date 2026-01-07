@@ -25,6 +25,8 @@ jobs:
           cargo binstall greentic-dev -y
           # E2E component_pack workflow depends on greentic-component being available.
           cargo binstall greentic-component -y --force
+          # wasm-tools is required for mcp composition tests
+          cargo binstall wasm-tools -y --force
       - name: Lint & Test
         run: |
           cargo fmt --all -- --check
