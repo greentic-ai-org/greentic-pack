@@ -168,7 +168,8 @@ fn assemble_manifest(
     secret_requirements: &[SecretRequirement],
 ) -> Result<BuildProducts> {
     let components = build_components(&config.components)?;
-    let flows = build_flows(&config.flows)?;
+    let component_ids: BTreeSet<String> = config.components.iter().map(|c| c.id.clone()).collect();
+    let flows = build_flows(&config.flows, &component_ids)?;
     let dependencies = build_dependencies(&config.dependencies)?;
     let assets = collect_assets(&config.assets, pack_root)?;
     let component_manifests: Vec<_> = components.iter().map(|c| c.0.clone()).collect();
@@ -331,7 +332,10 @@ fn build_bootstrap(
     Ok(Some(spec))
 }
 
-fn build_flows(configs: &[FlowConfig]) -> Result<Vec<PackFlowEntry>> {
+fn build_flows(
+    configs: &[FlowConfig],
+    component_ids: &BTreeSet<String>,
+) -> Result<Vec<PackFlowEntry>> {
     let mut seen = BTreeSet::new();
     let mut entries = Vec::new();
 
@@ -340,13 +344,24 @@ fn build_flows(configs: &[FlowConfig]) -> Result<Vec<PackFlowEntry>> {
         let yaml_src = fs::read_to_string(&cfg.file)
             .with_context(|| format!("failed to read flow {}", cfg.file.display()))?;
 
-        let mut flow: Flow = compile_ygtc_str(&yaml_src)
+        let normalized_yaml =
+            normalize_routing_shorthand(&yaml_src, component_ids).with_context(|| {
+                format!(
+                    "failed to normalize flow authoring in {}",
+                    cfg.file.display()
+                )
+            })?;
+
+        let mut flow: Flow = compile_ygtc_str(&normalized_yaml)
             .with_context(|| format!("failed to compile {}", cfg.file.display()))?;
         normalize_component_exec_nodes(&mut flow).with_context(|| {
             format!(
                 "failed to normalize component.exec nodes in {}",
                 cfg.file.display()
             )
+        })?;
+        resolve_missing_component_ids(&mut flow, component_ids).with_context(|| {
+            format!("failed to resolve component ids in {}", cfg.file.display())
         })?;
 
         let flow_id = flow.id.to_string();
@@ -427,6 +442,155 @@ fn normalize_component_exec_nodes(flow: &mut Flow) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn infer_component_id_for_node(node_id: &str, components: &BTreeSet<String>) -> Result<String> {
+    if components.is_empty() {
+        anyhow::bail!(
+            "node {} is missing component id and no packaged components are available to resolve it",
+            node_id
+        );
+    }
+
+    if components.contains(node_id) {
+        return Ok(node_id.to_string());
+    }
+
+    let suffix_matches: Vec<_> = components
+        .iter()
+        .filter(|candidate| candidate.rsplit('.').next() == Some(node_id))
+        .collect();
+    if suffix_matches.len() == 1 {
+        return Ok((*suffix_matches[0]).clone());
+    }
+
+    if components.len() == 1 {
+        return Ok(components
+            .iter()
+            .next()
+            .expect("component set is non-empty")
+            .clone());
+    }
+
+    anyhow::bail!(
+        "node {} is missing component id and could not be matched to packaged components: {}",
+        node_id,
+        components.iter().cloned().collect::<Vec<_>>().join(", ")
+    );
+}
+
+fn resolve_missing_component_ids(flow: &mut Flow, components: &BTreeSet<String>) -> Result<()> {
+    for (node_id, node) in flow.nodes.iter_mut() {
+        if !node.component.id.as_str().is_empty() && node.component.id.as_str() != "component.exec"
+        {
+            continue;
+        }
+
+        let component_id = infer_component_id_for_node(node_id.as_str(), components)?;
+
+        node.component.id = ComponentId::new(&component_id)
+            .with_context(|| format!("invalid component id resolved for node {}", node_id))?;
+    }
+    Ok(())
+}
+
+fn node_map_has_component_key(map: &serde_yaml_bw::Mapping, components: &BTreeSet<String>) -> bool {
+    map.keys().any(|key| {
+        key.as_str().is_some_and(|s| {
+            s == "component.exec" || components.contains(s) || s.contains('.') || s.contains(':')
+        })
+    })
+}
+
+fn normalize_routing_shorthand(yaml_src: &str, components: &BTreeSet<String>) -> Result<String> {
+    let mut doc: YamlValue = serde_yaml_bw::from_str(yaml_src)?;
+    let nodes = doc
+        .as_mapping_mut()
+        .and_then(|map| map.get_mut(YamlValue::from("nodes")))
+        .and_then(YamlValue::as_mapping_mut)
+        .ok_or_else(|| anyhow!("flow must contain nodes map"))?;
+
+    for (name, node) in nodes.iter_mut() {
+        let node_id = name
+            .as_str()
+            .ok_or_else(|| anyhow!("node identifiers must be strings"))?;
+        if let Some(map) = node.as_mapping_mut() {
+            if !node_map_has_component_key(map, components) {
+                let component_id = infer_component_id_for_node(node_id, components)?;
+                let original = std::mem::take(map);
+                let mut component_body = serde_yaml_bw::Mapping::new();
+                let mut routing_value: Option<YamlValue> = None;
+                let mut operation_value: Option<YamlValue> = None;
+                let mut pack_alias_value: Option<YamlValue> = None;
+                let mut output_value: Option<YamlValue> = None;
+                let mut telemetry_value: Option<YamlValue> = None;
+                for (k, v) in original.into_iter() {
+                    match k.as_str() {
+                        Some("routing") => {
+                            routing_value = Some(v);
+                            continue;
+                        }
+                        Some("operation") => {
+                            operation_value = Some(v);
+                            continue;
+                        }
+                        Some("pack_alias") => {
+                            pack_alias_value = Some(v);
+                            continue;
+                        }
+                        Some("output") => {
+                            output_value = Some(v);
+                            continue;
+                        }
+                        Some("telemetry") => {
+                            telemetry_value = Some(v);
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    component_body.insert(k, v);
+                }
+                let mut rebuilt = serde_yaml_bw::Mapping::new();
+                rebuilt.insert(
+                    YamlValue::from(component_id),
+                    YamlValue::Mapping(component_body),
+                );
+                if let Some(operation) = operation_value {
+                    rebuilt.insert(YamlValue::from("operation"), operation);
+                }
+                if let Some(pack_alias) = pack_alias_value {
+                    rebuilt.insert(YamlValue::from("pack_alias"), pack_alias);
+                }
+                if let Some(output) = output_value {
+                    rebuilt.insert(YamlValue::from("output"), output);
+                }
+                if let Some(telemetry) = telemetry_value {
+                    rebuilt.insert(YamlValue::from("telemetry"), telemetry);
+                }
+                if let Some(routing) = routing_value {
+                    rebuilt.insert(YamlValue::from("routing"), routing);
+                }
+                *map = rebuilt;
+            }
+
+            if let Some(routing) = map.get("routing")
+                && let Some(s) = routing.as_str()
+            {
+                let entry = match s {
+                    "out" => serde_yaml_bw::to_value(vec![serde_json::json!({ "out": true })])?,
+                    "reply" => serde_yaml_bw::to_value(vec![serde_json::json!({ "reply": true })])?,
+                    other => anyhow::bail!(
+                        "routing shorthand must be \"out\" or \"reply\", found {}",
+                        other
+                    ),
+                };
+                map.insert(YamlValue::from("routing"), entry);
+            }
+        }
+    }
+
+    let normalized = serde_yaml_bw::to_string(&doc)?;
+    Ok(normalized)
 }
 
 fn build_dependencies(configs: &[crate::config::DependencyConfig]) -> Result<Vec<PackDependency>> {
