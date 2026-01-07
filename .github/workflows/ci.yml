@@ -28,7 +28,7 @@ jobs:
 
       - name: Install greentic tooling
         run: |
-          cargo binstall greentic-component greentic-dev -y
+          cargo binstall greentic-dev -y
 
       - name: Install wasm32-wasip2 target
         run: rustup target add wasm32-wasip2

@@ -22,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo install cargo-binstall --locked || true
-          cargo binstall greentic-component greentic-dev -y
+          cargo binstall greentic-dev -y
       - name: Lint & Test
         run: |
           cargo fmt --all -- --check
