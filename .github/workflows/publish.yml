@@ -131,7 +131,7 @@ jobs:
           cargo build --release --target ${{ matrix.target }} --package packc --bins
           out_dir="target/${{ matrix.target }}/release"
           mkdir -p dist
-          tar -czf "dist/greentic-pack-${{ matrix.target }}.tgz" -C "${out_dir}" greentic-pack gtpack-inspect
+          tar -czf "dist/greentic-pack-${{ matrix.target }}.tgz" -C "${out_dir}" greentic-pack
           tar -czf "dist/packc-${{ matrix.target }}.tgz" -C "${out_dir}" packc
       - name: Upload binstall artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
