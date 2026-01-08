@@ -87,6 +87,14 @@ fn end_to_end_component_pack_workflow() {
         String::from_utf8_lossy(&output.stderr)
     );
 
+    // Prevent the scaffolded component from inheriting the workspace root in CI.
+    let manifest_path = component_dir.join("Cargo.toml");
+    let mut manifest = std::fs::read_to_string(&manifest_path).unwrap();
+    if !manifest.contains("[workspace]") {
+        manifest.push_str("\n[workspace]\n");
+        std::fs::write(&manifest_path, manifest).unwrap();
+    }
+
     // Build the component
     let output = Command::new("greentic-component")
         .current_dir(&component_dir)
