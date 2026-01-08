@@ -19,6 +19,12 @@ fn tool_available(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn greentic_component_cmd() -> Command {
+    let mut cmd = Command::new("greentic-component");
+    cmd.env_remove("CARGO_TARGET_DIR");
+    cmd
+}
+
 fn online() -> bool {
     if std::env::var("GREENTIC_PACK_OFFLINE").is_ok() {
         return false;
@@ -63,7 +69,7 @@ fn end_to_end_component_pack_workflow() {
 
     // Scaffold component inside pack
     let component_dir = pack_dir.join("components/demo-component");
-    let output = Command::new("greentic-component")
+    let output = greentic_component_cmd()
         .current_dir(&pack_dir)
         .args([
             "new",
@@ -96,7 +102,7 @@ fn end_to_end_component_pack_workflow() {
     }
 
     // Build the component
-    let output = Command::new("greentic-component")
+    let output = greentic_component_cmd()
         .current_dir(&component_dir)
         .args(["build", "--manifest", "component.manifest.json", "--json"])
         .output()
@@ -116,7 +122,7 @@ fn end_to_end_component_pack_workflow() {
     );
 
     // Doctor the component
-    let output = Command::new("greentic-component")
+    let output = greentic_component_cmd()
         .current_dir(&component_dir)
         .args(["doctor", "component.manifest.json"])
         .output()

@@ -24,6 +24,12 @@ fn tool_available(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn greentic_component_cmd() -> Command {
+    let mut cmd = Command::new("greentic-component");
+    cmd.env_remove("CARGO_TARGET_DIR");
+    cmd
+}
+
 fn online() -> bool {
     if std::env::var("GREENTIC_PACK_OFFLINE").is_ok() {
         return false;
@@ -229,7 +235,7 @@ fn multi_pack_shared_component_has_operation_binding() {
     let shared_component_dir = temp.path().join("shared-component");
     fs::create_dir_all(&shared_component_dir).expect("shared component dir");
 
-    let output = Command::new("greentic-component")
+    let output = greentic_component_cmd()
         .current_dir(&shared_component_dir)
         .args([
             "new",
@@ -253,7 +259,7 @@ fn multi_pack_shared_component_has_operation_binding() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let output = Command::new("greentic-component")
+    let output = greentic_component_cmd()
         .current_dir(&shared_component_dir)
         .args(["build", "--manifest", "component.manifest.json", "--json"])
         .output()
