@@ -22,7 +22,7 @@ fn build_writes_all_outputs_offline_with_cache_dir() {
     let out_gtpack = temp.path().join("demo.gtpack");
     let cache_dir = temp.path().join("cache");
 
-    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
     cmd.current_dir(workspace_root());
     cmd.args([
         "build",
@@ -58,7 +58,7 @@ fn update_reports_counts_in_json() {
         .expect("temp dir");
     let pack_dir = temp.path().join("demo-pack");
 
-    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
     cmd.current_dir(workspace_root());
     cmd.args([
         "new",
@@ -92,7 +92,7 @@ nodes:
     )
     .unwrap();
 
-    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
     cmd.current_dir(workspace_root());
     cmd.args([
         "update",
@@ -129,7 +129,7 @@ cache_dir = "{}" "#,
     )
     .unwrap();
 
-    let output = Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
         .args([
             "config",
@@ -160,32 +160,11 @@ cache_dir = "{}" "#,
 }
 
 #[test]
-fn packc_shim_emits_deprecation_warning() {
-    let output = Command::new(assert_cmd::cargo::cargo_bin!("packc"))
-        .current_dir(workspace_root())
-        .args(["config", "--json", "--log", "warn"])
-        .output()
-        .expect("run packc config");
-
-    assert!(
-        output.status.success(),
-        "packc config failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("`packc` is deprecated"),
-        "expected deprecation warning in stderr, got: {stderr}"
-    );
-}
-
-#[test]
 fn greentic_pack_inspect_alias_warns_and_runs() {
     let temp = TempDir::new().expect("temp dir");
     let gtpack_out = temp.path().join("demo.gtpack");
 
-    let mut build_cmd = Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+    let mut build_cmd = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
     build_cmd.current_dir(workspace_root()).args([
         "build",
         "--in",
@@ -242,7 +221,7 @@ fn gui_loveable_convert_cli_builds_gtpack() {
 
     let out = temp.path().join("demo.gtpack");
 
-    let output = Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
         .args([
             "gui",

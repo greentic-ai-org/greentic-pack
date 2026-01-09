@@ -190,7 +190,7 @@ needed, then run `packc update --in .` to refresh `pack.yaml`.
 
 ```bash
 rustup target add wasm32-wasip2   # run once
-cargo run -p packc --bin packc -- build \
+cargo run -p greentic-pack --bin greentic-pack -- build \
   --in examples/weather-demo \
   --out dist/pack.wasm \
   --manifest dist/manifest.cbor \
@@ -211,7 +211,7 @@ Outputs:
 
 When you pass `--gtpack-out`, packc calls `greentic-pack` to write the
 canonical `.gtpack` archive. Use
-`cargo run -p packc --bin greentic-pack -- --json doctor dist/demo.gtpack`
+`cargo run -p greentic-pack --bin greentic-pack -- --json doctor dist/demo.gtpack`
 to inspect the archive, confirm the SBOM entries have media types, and ensure
 the flows/templates match what was written into `dist/pack.wasm`.
 

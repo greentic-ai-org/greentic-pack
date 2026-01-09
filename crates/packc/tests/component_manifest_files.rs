@@ -116,7 +116,7 @@ fn component_manifests_are_embedded_and_indexed() {
     let manifest_out = temp.path().join("dist/manifest.cbor");
     let gtpack_out = temp.path().join("dist/pack.gtpack");
 
-    let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
         .args([
             "build",

@@ -107,7 +107,7 @@ fn resolve_out_path() -> PathBuf {
             }
             "-h" | "--help" => {
                 eprintln!(
-                    "Usage: cargo run -p greentic-pack --example build_demo [-- --out <path>]"
+                    "Usage: cargo run -p greentic-pack-lib --example build_demo [-- --out <path>]"
                 );
                 std::process::exit(0);
             }

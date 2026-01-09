@@ -134,7 +134,7 @@ builder_demo_check() (
   run_demo() {
     local out="$1"
     local log="$2"
-    if cargo run -p greentic-pack --example build_demo -- --out "$out" >"$log" 2>&1; then
+    if cargo run -p greentic-pack-lib --example build_demo -- --out "$out" >"$log" 2>&1; then
       return 0
     fi
     if grep -q "Couldn't resolve host name" "$log" || grep -q "failed to download" "$log"; then
@@ -168,20 +168,20 @@ builder_demo_check() (
   fi
 
   local report
-  report=$(cargo run -p packc --bin greentic-pack -- --json doctor "$out1")
+  report=$(cargo run -p greentic-pack --bin greentic-pack -- --json doctor "$out1")
   echo "$report" | jq -e 'has("sbom") and (all(.sbom[]; (.media_type | length > 0)))' >/dev/null
 )
 
-packc_gtpack_check() {
-  require_tool cargo "packc build" || return $?
-  require_tool jq "packc gtpack inspect" || return $?
+greentic_pack_gtpack_check() {
+  require_tool cargo "greentic-pack build" || return $?
+  require_tool jq "greentic-pack gtpack inspect" || return $?
   if ! can_reach_cratesio; then
-    echo "[skip] packc gtpack (crates.io unreachable)"
+    echo "[skip] greentic-pack gtpack (crates.io unreachable)"
     return 0
   fi
 
   if [[ "$LOCAL_CHECK_ONLINE" != "1" ]]; then
-    echo "[skip] packc gtpack (offline mode)"
+    echo "[skip] greentic-pack gtpack (offline mode)"
     return 0
   fi
 
@@ -197,7 +197,7 @@ packc_gtpack_check() {
   local out_gtpack="$tmpdir_rel/pack.gtpack"
 
   local build_log="$tmpdir/packc-build.log"
-  if ! cargo run -p packc --bin packc -- build \
+  if ! cargo run -p greentic-pack --bin greentic-pack -- build \
     --in "$pack_dir" \
     --out "$out_wasm" \
     --manifest "$out_manifest" \
@@ -206,7 +206,7 @@ packc_gtpack_check() {
     --log warn \
     >"$build_log" 2>&1; then
     if grep -q "Couldn't resolve host name" "$build_log"; then
-      echo "[skip] packc gtpack (crates.io unreachable)"
+      echo "[skip] greentic-pack gtpack (crates.io unreachable)"
       return 0
     fi
     cat "$build_log"
@@ -214,7 +214,7 @@ packc_gtpack_check() {
   fi
 
   local report
-  report=$(cargo run -p packc --bin greentic-pack -- --json doctor "$pack_dir/$out_gtpack")
+  report=$(cargo run -p greentic-pack --bin greentic-pack -- --json doctor "$pack_dir/$out_gtpack")
   echo "$report" | jq -e 'has("sbom") and (all(.sbom[]; (.media_type | length > 0)))' >/dev/null
 }
 
@@ -248,8 +248,8 @@ main() {
   step "Builder demo determinism"
   run_or_skip "builder demo" builder_demo_check
 
-  step "Packc builds canonical gtpack"
-  run_or_skip "packc gtpack" packc_gtpack_check
+  step "Greentic-pack builds canonical gtpack"
+  run_or_skip "greentic-pack gtpack" greentic_pack_gtpack_check
 
   echo ""
   echo "✅ local checks completed"

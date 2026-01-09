@@ -54,7 +54,7 @@ fn end_to_end_component_pack_workflow() {
     let pack_dir = temp.path().join("demo-pack");
 
     // Scaffold pack
-    Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
         .args([
             "new",
@@ -135,7 +135,7 @@ fn end_to_end_component_pack_workflow() {
     );
 
     // Sync pack.yaml with built component
-    Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
         .args([
             "components",

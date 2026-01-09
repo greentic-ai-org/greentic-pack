@@ -53,7 +53,7 @@ flows: []
     )
     .unwrap();
 
-    Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(pack_dir)
         .args([
             "update",
@@ -153,7 +153,7 @@ flows:
     )
     .unwrap();
 
-    let output = Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(pack_dir)
         .args([
             "build",

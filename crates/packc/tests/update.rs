@@ -16,7 +16,7 @@ fn update_syncs_components_and_flows() {
     let temp = tempfile::tempdir().expect("temp dir");
     let pack_dir = temp.path().join("demo-pack");
 
-    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
     cmd.current_dir(workspace_root());
     cmd.args([
         "new",
@@ -79,7 +79,7 @@ nodes:
     });
     fs::write(&pack_yaml, serde_yaml_bw::to_string(&cfg).unwrap()).unwrap();
 
-    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
     cmd.current_dir(workspace_root());
     cmd.args([
         "update",

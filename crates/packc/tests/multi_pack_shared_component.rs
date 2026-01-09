@@ -160,7 +160,7 @@ fn write_sidecar(pack_dir: &Path, wasm_src: &Path) {
 fn build_pack(pack_dir: &Path, gtpack_name: &str) -> (PathBuf, PathBuf) {
     let gtpack_out = pack_dir.join("dist").join(gtpack_name);
     let manifest_out = pack_dir.join("dist").join("manifest.cbor");
-    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
     cmd.current_dir(workspace_root());
     cmd.args([
         "build",

@@ -17,7 +17,7 @@ fn plan_outputs_json_for_gtpack() {
     let gtpack = temp.path().join("demo.gtpack");
 
     // Build a small pack to exercise the CLI.
-    Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
         .args([
             "build",

@@ -19,7 +19,7 @@ fn workspace_root() -> PathBuf {
 fn inspect_reports_messaging_adapter() {
     let (temp_dir, pack_path, adapter_name) = build_pack_with_messaging();
 
-    let output = Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
         .args(["inspect", "--pack", pack_path.to_str().unwrap(), "--json"])
         .assert()
@@ -54,7 +54,7 @@ fn inspect_reports_messaging_adapter() {
 fn inspect_json_reports_messaging_section() {
     let (temp_dir, pack_path, adapter_name) = build_pack_with_messaging();
 
-    let output = Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
         .args(["inspect", "--pack", pack_path.to_str().unwrap(), "--json"])
         .assert()

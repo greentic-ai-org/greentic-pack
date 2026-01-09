@@ -1,5 +1,5 @@
 [package]
-name = "packc"
+name = "greentic-pack"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
@@ -54,9 +54,9 @@ wit-component = { workspace = true }
 greentic-distributor-client = { workspace = true, default-features = false, features = ["reqwest", "dist-client"] }
 pack_component_template = { workspace = true }
 
-[[bin]]
+[lib]
 name = "packc"
-path = "bin/packc.rs"
+path = "src/lib.rs"
 
 [[bin]]
 name = "greentic-pack"

@@ -99,7 +99,7 @@ nodes:
     .expect("write sidecar");
 
     let manifest_path = pack_dir.join("dist/manifest.cbor");
-    let output = Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
         .args([
             "build",

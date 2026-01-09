@@ -115,7 +115,7 @@ flows:
     let manifest_out = pack_dir.join("dist/manifest.cbor");
     let gtpack_out = pack_dir.join("dist/pack.gtpack");
 
-    let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(pack_dir)
         .args([
             "build",
@@ -220,7 +220,7 @@ flows: []
     fs::write(pack_dir.join("pack.yaml"), initial_pack).unwrap();
 
     let gtpack_out = pack_dir.join("dist/pack.gtpack");
-    let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(pack_dir)
         .args([
             "build",
@@ -313,7 +313,7 @@ flows: []
     fs::write(pack_dir.join("pack.yaml"), initial_pack).unwrap();
 
     let pack_yaml_before = fs::read_to_string(pack_dir.join("pack.yaml")).unwrap();
-    let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(pack_dir)
         .args([
             "build",

@@ -104,9 +104,9 @@ nodes:
         .args([
             "run",
             "-p",
-            "packc",
+            "greentic-pack",
             "--bin",
-            "packc",
+            "greentic-pack",
             "--quiet",
             "--",
             "build",

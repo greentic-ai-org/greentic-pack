@@ -7,7 +7,7 @@ use tempfile::TempDir;
 #[test]
 fn config_explain_json_outputs_config_and_provenance() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_packc"));
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
     cmd.current_dir(temp.path()).arg("config").arg("--json");
 
     let output = cmd.output()?;

@@ -117,7 +117,7 @@ fn digest_refs_are_preserved_in_gtpack() {
     let manifest_out = temp.path().join("dist/manifest.cbor");
     let gtpack_out = temp.path().join("dist/pack.gtpack");
 
-    let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("packc"))
+    let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(".."))
         .args([
             "build",
@@ -169,7 +169,7 @@ fn tag_refs_require_flag() {
     let gtpack_out = temp.path().join("dist/pack.gtpack");
 
     let run_build = |allow_tags: bool| {
-        let mut cmd = std::process::Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+        let mut cmd = std::process::Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
         cmd.current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(".."));
         cmd.args([
             "build",

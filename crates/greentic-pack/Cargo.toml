@@ -1,5 +1,5 @@
 [package]
-name = "greentic-pack"
+name = "greentic-pack-lib"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
@@ -10,6 +10,7 @@ documentation = "https://docs.greentic.ai/"
 homepage = "https://github.com/greentic-ai/greentic-pack"
 
 [lib]
+name = "greentic_pack"
 path = "src/lib.rs"
 
 [dependencies]

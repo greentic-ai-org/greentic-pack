@@ -33,13 +33,13 @@ greentic-pack/
 └── .github/workflows/        # CI automation
 ```
 
-### packc
+### greentic-pack
 
 The CLI expects a pack directory that contains `pack.yaml` alongside its flow
 files and templates. Example:
 
 ```bash
-cargo run -p packc --bin packc -- build \
+cargo run -p greentic-pack --bin greentic-pack -- build \
   --in examples/weather-demo \
   --out dist/pack.wasm \
   --manifest dist/manifest.cbor \
@@ -53,7 +53,7 @@ CycloneDX SBOM, regenerates `crates/pack_component/src/data.rs`, and compiles
 while still validating the pack inputs.
 
 Passing `--gtpack-out dist/demo.gtpack` generates the canonical `.gtpack`
-archive; inspect it with `cargo run -p packc --bin greentic-pack -- --json doctor dist/demo.gtpack`
+archive; inspect it with `cargo run -p greentic-pack --bin greentic-pack -- --json doctor dist/demo.gtpack`
 to confirm the SBOM entries, flows, and templates embedded inside the archive.
 
 > ℹ️ The build step expects the `wasm32-wasip2` Rust target. Install it
@@ -64,7 +64,7 @@ to confirm the SBOM entries, flows, and templates embedded inside the archive.
 - Declare MCP routers in `pack.yaml` via `mcp_components` (id, router_ref,
   optional `protocol` defaulting to `25.06.18`, and optional
   `adapter_template` defaulting to `default`).
-- During `packc build`, the MCP adapter template is composed with each router
+- During `greentic-pack build`, the MCP adapter template is composed with each router
   using `wasm-tools compose`, producing merged `greentic:component@0.4.0`
   artifacts written under `.packc/mcp/<id>/component.wasm`.
 - `router_ref` must point to a local component file (paths relative to the pack
@@ -74,7 +74,7 @@ to confirm the SBOM entries, flows, and templates embedded inside the archive.
 - The default adapter can be overridden via
   `GREENTIC_PACK_ADAPTER_25_06_18=/path/to/adapter.component.wasm` if you need
   to pin or test a specific adapter build.
-- packc pins a specific MCP adapter reference internally (see
+- greentic-pack pins a specific MCP adapter reference internally (see
   `MCP_ADAPTER_25_06_18` in code); current image:
   `ghcr.io/greentic-ai/greentic-mcp-adapter:25.06.18-v0.4.4` (digest pending).
 

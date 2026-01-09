@@ -111,9 +111,9 @@ fn build_pack_with_packc() -> (TempDir, PathBuf, greentic_pack::reader::PackLoad
         .args([
             "run",
             "-p",
-            "packc",
+            "greentic-pack",
             "--bin",
-            "packc",
+            "greentic-pack",
             "--quiet",
             "--",
             "build",

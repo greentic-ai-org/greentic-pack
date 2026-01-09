@@ -18,7 +18,7 @@ fn sign_and_verify_manifest() {
     let manifest_out = temp.path().join("manifest.cbor");
 
     // Build manifest
-    let mut build = Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+    let mut build = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
     build.current_dir(workspace_root());
     build.args([
         "build",
@@ -47,7 +47,7 @@ fn sign_and_verify_manifest() {
     fs::write(&pub_path, pub_pem.as_bytes()).expect("write pk");
 
     // Sign
-    let mut sign = Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+    let mut sign = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
     sign.current_dir(workspace_root());
     sign.args([
         "sign",
@@ -63,7 +63,7 @@ fn sign_and_verify_manifest() {
     sign.assert().success();
 
     // Verify
-    let mut verify = Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+    let mut verify = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
     verify.current_dir(workspace_root());
     verify.args([
         "verify",

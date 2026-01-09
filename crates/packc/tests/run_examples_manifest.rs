@@ -152,7 +152,7 @@ fn build_all_examples_manifest_only() {
             }
             _ => {}
         }
-        let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("packc"));
+        let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
         cmd.current_dir(workspace_root());
         cmd.args(["build", "--in", pack, "--dry-run", "--log", "warn"]);
         cmd.assert().success();
