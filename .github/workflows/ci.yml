@@ -28,11 +28,10 @@ jobs:
 
       - name: Install greentic tooling
         run: |
-          cargo binstall greentic-dev -y
           # Required by mcp_composition tests
-          cargo binstall wasm-tools -y --force
+          cargo binstall wasm-tools -y --force --no-fallback
           # E2E component_pack tests require greentic-component; ensure it is present explicitly.
-          cargo binstall greentic-component -y --force
+          cargo binstall greentic-component -y --force --no-fallback
 
       - name: Install wasm32-wasip2 target
         run: rustup target add wasm32-wasip2
