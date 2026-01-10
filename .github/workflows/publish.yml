@@ -54,9 +54,9 @@ jobs:
           set -euo pipefail
           cargo install cargo-binstall --locked || true
           # E2E component_pack workflow depends on greentic-component being available.
-          cargo binstall greentic-component -y --force
+          BINSTALL_DISABLE_STRATEGIES=compile cargo binstall greentic-component -y --force
           # wasm-tools is required for mcp composition tests
-          cargo binstall wasm-tools -y --force
+          BINSTALL_DISABLE_STRATEGIES=compile cargo binstall wasm-tools -y --force
       - name: Build & Test
         run: |
           cargo build --workspace --all-features

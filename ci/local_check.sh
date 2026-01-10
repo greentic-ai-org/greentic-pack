@@ -217,7 +217,7 @@ main() {
 
   if ! need greentic-component; then
     step "Install greentic-component"
-    run_or_skip "greentic-component install" bash -c "cargo binstall greentic-component -y"
+    run_or_skip "greentic-component install" bash -c "BINSTALL_DISABLE_STRATEGIES=compile cargo binstall greentic-component -y"
   fi
 
   step "Formatting"
