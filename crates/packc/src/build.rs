@@ -224,6 +224,7 @@ pub async fn run(opts: &BuildOptions) -> Result<()> {
 struct BuildProducts {
     manifest: PackManifest,
     components: Vec<ComponentBinary>,
+    flow_files: Vec<FlowFile>,
     assets: Vec<AssetFile>,
 }
 
@@ -241,6 +242,13 @@ struct AssetFile {
     source: PathBuf,
 }
 
+#[derive(Clone)]
+struct FlowFile {
+    logical_path: String,
+    bytes: Vec<u8>,
+    media_type: &'static str,
+}
+
 fn assemble_manifest(
     config: &PackConfig,
     pack_root: &Path,
@@ -248,7 +256,7 @@ fn assemble_manifest(
 ) -> Result<BuildProducts> {
     let components = build_components(&config.components)?;
     let component_ids: BTreeSet<String> = config.components.iter().map(|c| c.id.clone()).collect();
-    let flows = build_flows(&config.flows, &component_ids, pack_root)?;
+    let (flows, flow_files) = build_flows(&config.flows, &component_ids, pack_root)?;
     let dependencies = build_dependencies(&config.dependencies)?;
     let assets = collect_assets(&config.assets, pack_root)?;
     let component_manifests: Vec<_> = components.iter().map(|c| c.0.clone()).collect();
@@ -276,6 +284,7 @@ fn assemble_manifest(
     Ok(BuildProducts {
         manifest,
         components: components.into_iter().map(|(_, bin)| bin).collect(),
+        flow_files,
         assets,
     })
 }
@@ -552,12 +561,15 @@ fn build_flows(
     configs: &[FlowConfig],
     component_ids: &BTreeSet<String>,
     pack_root: &Path,
-) -> Result<Vec<PackFlowEntry>> {
+) -> Result<(Vec<PackFlowEntry>, Vec<FlowFile>)> {
     let mut seen = BTreeSet::new();
     let mut entries = Vec::new();
+    let mut flow_files = Vec::new();
 
     for cfg in configs {
         info!(id = %cfg.id, path = %cfg.file.display(), "compiling flow");
+        let yaml_bytes = fs::read(&cfg.file)
+            .with_context(|| format!("failed to read flow {}", cfg.file.display()))?;
         let mut flow: Flow = compile_ygtc_file(&cfg.file)
             .with_context(|| format!("failed to compile {}", cfg.file.display()))?;
         populate_component_exec_operations(&mut flow, &cfg.file).with_context(|| {
@@ -566,6 +578,7 @@ fn build_flows(
                 cfg.file.display()
             )
         })?;
+        normalize_legacy_component_exec_ids(&mut flow)?;
         resolve_missing_component_ids(&mut flow, component_ids).with_context(|| {
             format!("failed to resolve component ids in {}", cfg.file.display())
         })?;
@@ -589,10 +602,22 @@ fn build_flows(
             tags: cfg.tags.clone(),
             entrypoints,
         };
+
+        let flow_id = flow_entry.id.to_string();
+        flow_files.push(FlowFile {
+            logical_path: format!("flows/{flow_id}/flow.ygtc"),
+            bytes: yaml_bytes,
+            media_type: "application/yaml",
+        });
+        flow_files.push(FlowFile {
+            logical_path: format!("flows/{flow_id}/flow.json"),
+            bytes: serde_json::to_vec(&flow_entry.flow).context("encode flow json")?,
+            media_type: "application/json",
+        });
         entries.push(flow_entry);
     }
 
-    Ok(entries)
+    Ok((entries, flow_files))
 }
 
 fn infer_component_id_for_node(node_id: &str, components: &BTreeSet<String>) -> Result<String> {
@@ -674,6 +699,25 @@ fn populate_component_exec_operations(flow: &mut Flow, path: &Path) -> Result<()
         }
     }
 
+    Ok(())
+}
+
+fn normalize_legacy_component_exec_ids(flow: &mut Flow) -> Result<()> {
+    for (node_id, node) in flow.nodes.iter_mut() {
+        if node.component.id.as_str() != "component.exec" {
+            continue;
+        }
+        let Some(op) = node.component.operation.as_deref() else {
+            continue;
+        };
+        if !op.contains('.') && !op.contains(':') {
+            continue;
+        }
+        node.component.id = ComponentId::new(op).with_context(|| {
+            format!("invalid component id {} resolved for node {}", op, node_id)
+        })?;
+        node.component.operation = None;
+    }
     Ok(())
 }
 
@@ -921,6 +965,23 @@ fn package_gtpack(
         "application/cbor",
     );
     write_zip_entry(&mut writer, "manifest.cbor", manifest_bytes, options)?;
+
+    let mut flow_files = build.flow_files.clone();
+    flow_files.sort_by(|a, b| a.logical_path.cmp(&b.logical_path));
+    for flow_file in flow_files {
+        record_sbom_entry(
+            &mut sbom_entries,
+            &flow_file.logical_path,
+            &flow_file.bytes,
+            flow_file.media_type,
+        );
+        write_zip_entry(
+            &mut writer,
+            &flow_file.logical_path,
+            &flow_file.bytes,
+            options,
+        )?;
+    }
 
     if bundle != BundleMode::None {
         let mut components = build.components.clone();
@@ -1328,6 +1389,7 @@ mod tests {
                     format!("sha256:{:x}", sha.finalize())
                 },
             }],
+            flow_files: Vec::new(),
             assets: Vec::new(),
         };
 

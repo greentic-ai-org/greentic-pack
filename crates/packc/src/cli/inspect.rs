@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -55,6 +56,7 @@ pub async fn handle(args: InspectArgs, json: bool, runtime: &RuntimeContext) -> 
             inspect_source_dir(&path, runtime, args.allow_oci_tags).await?
         }
     };
+    validate_pack_files(&load)?;
 
     if json {
         let payload = serde_json::json!({
@@ -262,6 +264,32 @@ fn print_human(load: &PackLoad) {
         for warning in &report.warnings {
             println!("  - {}", warning);
         }
+    }
+}
+
+fn validate_pack_files(load: &PackLoad) -> Result<()> {
+    let mut missing = BTreeSet::new();
+
+    for flow in &load.manifest.flows {
+        if !load.files.contains_key(&flow.file_yaml) {
+            missing.insert(flow.file_yaml.clone());
+        }
+        if !load.files.contains_key(&flow.file_json) {
+            missing.insert(flow.file_json.clone());
+        }
+    }
+
+    for component in &load.manifest.components {
+        if !load.files.contains_key(&component.file_wasm) {
+            missing.insert(component.file_wasm.clone());
+        }
+    }
+
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        let items = missing.into_iter().collect::<Vec<_>>().join(", ");
+        bail!("pack is missing required files: {}", items);
     }
 }
 

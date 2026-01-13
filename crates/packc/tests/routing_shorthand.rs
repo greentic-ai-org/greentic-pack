@@ -63,11 +63,8 @@ type: messaging
 start: {flow_name}
 nodes:
   {flow_name}:
-    component.exec:
-      component: ai.greentic.fixture
-      operation: handle_message
-      input:
-        text: "hi"
+    handle_message:
+      text: "hi"
     routing: {routing}
 "#
     );

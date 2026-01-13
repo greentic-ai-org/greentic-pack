@@ -1180,6 +1180,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "float-cmp"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b09cf3155332e944990140d967ff5eceb70df778b34f77d8075db46e4704e6d8"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "fluent-uri"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1464,9 +1473,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-flow"
-version = "0.4.24"
+version = "0.4.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5954bb27bbe6f6da20e26cb4b75cf645b4502ab0a3bd23b051c336177ba2c04"
+checksum = "753bb2cb14e865259c167c03150b0d2489c7aeee7bb626a97cc834db4244d2b7"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1532,7 +1541,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-pack"
-version = "0.4.46"
+version = "0.4.47"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1552,6 +1561,7 @@ dependencies = [
  "indoc",
  "pack_component_template",
  "pkcs8",
+ "predicates",
  "rand_core 0.6.4",
  "regex",
  "schemars 1.2.0",
@@ -1577,7 +1587,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-pack-lib"
-version = "0.4.46"
+version = "0.4.47"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2394,6 +2404,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "normalize-line-endings"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61807f77802ff30975e01f4f071c8ba10c022052f98b3294119f3e615d13e5be"
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2652,7 +2668,7 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 
 [[package]]
 name = "pack_component"
-version = "0.4.46"
+version = "0.4.47"
 dependencies = [
  "greentic-interfaces-host",
  "serde",
@@ -2662,7 +2678,7 @@ dependencies = [
 
 [[package]]
 name = "pack_component_template"
-version = "0.4.46"
+version = "0.4.47"
 
 [[package]]
 name = "parking_lot"
@@ -2820,7 +2836,10 @@ checksum = "a5d19ee57562043d37e82899fade9a22ebab7be9cef5026b07fda9cdd4293573"
 dependencies = [
  "anstyle",
  "difflib",
+ "float-cmp",
+ "normalize-line-endings",
  "predicates-core",
+ "regex",
 ]
 
 [[package]]

@@ -69,11 +69,8 @@ type: messaging
 start: hello-world
 nodes:
   hello-world:
-    component.exec:
-      component: {COMPONENT_ID}
-      operation: {OPERATION}
-      input:
-        input: "hi"
+    {OPERATION}:
+      input: "hi"
     routing:
       - out: true
 "#

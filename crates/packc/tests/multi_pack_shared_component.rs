@@ -115,11 +115,8 @@ type: messaging
 start: call
 nodes:
   call:
-    component.exec:
-      component: {COMPONENT_ID}
-      operation: {OPERATION}
-      input:
-        text: "hi from {pack_name}"
+    {OPERATION}:
+      text: "hi from {pack_name}"
     routing:
       - out: true
 "#

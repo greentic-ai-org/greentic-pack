@@ -1,13 +1,19 @@
-use std::path::PathBuf;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use assert_cmd::prelude::*;
 use greentic_pack::builder::{ComponentArtifact, FlowBundle, PackBuilder, PackMeta};
 use greentic_pack::messaging::{MessagingAdapter, MessagingAdapterKind, MessagingSection};
+use predicates::prelude::PredicateBooleanExt;
 use semver::Version;
 use serde_json::Value;
 use serde_json::json;
 use tempfile::TempDir;
+use zip::CompressionMethod;
+use zip::write::FileOptions;
+use zip::{ZipArchive, ZipWriter};
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -115,6 +121,32 @@ fn inspect_accepts_positional_path() {
     drop(temp_dir);
 }
 
+#[test]
+fn doctor_reports_missing_archive_files() {
+    let (temp_dir, pack_path, _adapter_name) = build_pack_with_messaging();
+    let missing_path = temp_dir.path().join("missing.gtpack");
+
+    strip_pack_file(
+        &pack_path,
+        &missing_path,
+        "components/demo.component@1.0.0/component.wasm",
+    )
+    .expect("strip component wasm from pack");
+
+    Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
+        .current_dir(workspace_root())
+        .args(["doctor", "--pack", missing_path.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(
+            predicates::str::contains("missing file").and(predicates::str::contains(
+                "components/demo.component@1.0.0/component.wasm",
+            )),
+        );
+
+    drop(temp_dir);
+}
+
 fn build_pack_with_messaging() -> (TempDir, PathBuf, String) {
     let adapter_name = "demo-adapter".to_string();
     let temp = TempDir::new().expect("temp dir");
@@ -194,4 +226,31 @@ fn build_pack_with_messaging() -> (TempDir, PathBuf, String) {
     assert!(std::fs::read(&pack_path).is_ok());
 
     (temp, pack_path, adapter_name)
+}
+
+fn strip_pack_file(src: &Path, dest: &Path, remove: &str) -> anyhow::Result<()> {
+    let src_file = File::open(src)?;
+    let mut archive = ZipArchive::new(src_file)?;
+    let dest_file = File::create(dest)?;
+    let mut writer = ZipWriter::new(dest_file);
+
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i)?;
+        let name = entry.name().to_string();
+        if name == remove {
+            continue;
+        }
+        let mut buf = Vec::new();
+        entry.read_to_end(&mut buf)?;
+        let mut options = FileOptions::<()>::default();
+        options = options.compression_method(match entry.compression() {
+            CompressionMethod::Stored => CompressionMethod::Stored,
+            _ => CompressionMethod::Deflated,
+        });
+        writer.start_file(name, options)?;
+        writer.write_all(&buf)?;
+    }
+
+    writer.finish()?;
+    Ok(())
 }
