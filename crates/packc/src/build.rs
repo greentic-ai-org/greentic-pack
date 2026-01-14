@@ -810,6 +810,9 @@ fn merge_component_sources_extension(
 ) -> Result<Option<BTreeMap<String, ExtensionRef>>> {
     let mut entries = Vec::new();
     for comp in &lock.components {
+        if comp.r#ref.starts_with("file://") {
+            continue;
+        }
         let source = match ComponentSourceRef::from_str(&comp.r#ref) {
             Ok(parsed) => parsed,
             Err(_) => {
@@ -1452,6 +1455,49 @@ mod tests {
         assert!(matches!(
             decoded.components[0].artifact,
             ArtifactLocationV1::Inline { .. }
+        ));
+    }
+
+    #[test]
+    fn component_sources_extension_skips_file_refs() {
+        let lock = PackLockV1::new(vec![LockedComponent {
+            name: "local.component".into(),
+            r#ref: "file:///tmp/component.wasm".into(),
+            digest: "sha256:deadbeef".into(),
+        }]);
+
+        let ext_none =
+            merge_component_sources_extension(None, &lock, BundleMode::Cache).expect("ext");
+        assert!(ext_none.is_none(), "file refs should be omitted");
+
+        let lock = PackLockV1::new(vec![
+            LockedComponent {
+                name: "local.component".into(),
+                r#ref: "file:///tmp/component.wasm".into(),
+                digest: "sha256:deadbeef".into(),
+            },
+            LockedComponent {
+                name: "remote.component".into(),
+                r#ref: "oci://ghcr.io/demo/component:2.0.0".into(),
+                digest: "sha256:cafebabe".into(),
+            },
+        ]);
+
+        let ext_some =
+            merge_component_sources_extension(None, &lock, BundleMode::None).expect("ext");
+        let value = match ext_some
+            .unwrap()
+            .get(EXT_COMPONENT_SOURCES_V1)
+            .and_then(|e| e.inline.as_ref())
+        {
+            Some(ExtensionInline::Other(v)) => v.clone(),
+            _ => panic!("missing inline"),
+        };
+        let decoded = ComponentSourcesV1::from_extension_value(&value).expect("decode");
+        assert_eq!(decoded.components.len(), 1);
+        assert!(matches!(
+            decoded.components[0].source,
+            ComponentSourceRef::Oci(_)
         ));
     }
 
