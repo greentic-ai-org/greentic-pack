@@ -1,0 +1,38 @@
+{
+  "flow": "qa_orchestrator.ygtc",
+  "nodes": {
+    "call_specialist": {
+      "component_id": "flow.call",
+      "digest": "sha256:deadbeef",
+      "source": {
+        "kind": "repo",
+        "ref": "io.3bridges.components.flow@1.0.0"
+      }
+    },
+    "collect_question": {
+      "component_id": "qa.process",
+      "digest": "sha256:deadbeef",
+      "source": {
+        "kind": "repo",
+        "ref": "io.3bridges.components.qa@1.0.0"
+      }
+    },
+    "load_profile": {
+      "component_id": "state.get",
+      "digest": "sha256:deadbeef",
+      "source": {
+        "kind": "repo",
+        "ref": "io.3bridges.components.state@1.0.0"
+      }
+    },
+    "respond_to_user": {
+      "component_id": "messaging.emit",
+      "digest": "sha256:deadbeef",
+      "source": {
+        "kind": "repo",
+        "ref": "io.3bridges.components.messaging@1.0.0"
+      }
+    }
+  },
+  "schema_version": 1
+}

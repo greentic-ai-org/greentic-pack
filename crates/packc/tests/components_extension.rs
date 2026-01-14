@@ -76,24 +76,25 @@ nodes:
       - out: true
 "#;
     fs::write(dir.join("flows/main.ygtc"), flow).expect("flow file");
-    let sidecar = json!({
+    let summary = json!({
         "schema_version": 1,
-        "flow": "flows/main.ygtc",
+        "flow": "main.ygtc",
         "nodes": {
             "call": {
+                "component_id": "demo.component",
                 "source": {
                     "kind": "local",
-                    "path": "../components/demo.wasm",
-                    "digest": digest
-                }
+                    "path": "../components/demo.wasm"
+                },
+                "digest": digest
             }
         }
     });
     fs::write(
-        dir.join("flows/main.ygtc.resolve.json"),
-        serde_json::to_vec_pretty(&sidecar).unwrap(),
+        dir.join("flows/main.ygtc.resolve.summary.json"),
+        serde_json::to_vec_pretty(&summary).unwrap(),
     )
-    .expect("write sidecar");
+    .expect("write summary");
 
     dir.join("pack.yaml")
 }

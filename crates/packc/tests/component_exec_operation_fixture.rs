@@ -44,24 +44,25 @@ fn component_exec_operation_is_preserved_in_manifest() {
     let wasm_path = pack_root.join("components/fixture.wasm");
     write_stub_wasm(&wasm_path);
     let digest = format!("sha256:{:x}", Sha256::digest(fs::read(&wasm_path).unwrap()));
-    let sidecar = json!({
+    let summary = json!({
         "schema_version": 1,
-        "flow": "flows/main.ygtc",
+        "flow": "main.ygtc",
         "nodes": {
             "hello": {
+                "component_id": COMPONENT_ID,
                 "source": {
                     "kind": "local",
-                    "path": "../components/fixture.wasm",
-                    "digest": digest
-                }
+                    "path": "../components/fixture.wasm"
+                },
+                "digest": digest
             }
         }
     });
     fs::write(
-        pack_root.join("flows/main.ygtc.resolve.json"),
-        serde_json::to_vec_pretty(&sidecar).unwrap(),
+        pack_root.join("flows/main.ygtc.resolve.summary.json"),
+        serde_json::to_vec_pretty(&summary).unwrap(),
     )
-    .expect("write sidecar");
+    .expect("write summary");
 
     let manifest_path = pack_root.join("dist/manifest.cbor");
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))

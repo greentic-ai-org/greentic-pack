@@ -79,24 +79,25 @@ nodes:
 "#
     );
     fs::write(pack_dir.join("flows/main.ygtc"), flow).expect("flow file");
-    let sidecar = serde_json::json!({
+    let summary = serde_json::json!({
         "schema_version": 1,
-        "flow": "flows/main.ygtc",
+        "flow": "main.ygtc",
         "nodes": {
             "call": {
+                "component_id": COMPONENT_ID,
                 "source": {
                     "kind": "local",
-                    "path": "../components/demo.wasm",
-                    "digest": digest
-                }
+                    "path": "../components/demo.wasm"
+                },
+                "digest": digest
             }
         }
     });
     fs::write(
-        pack_dir.join("flows/main.ygtc.resolve.json"),
-        serde_json::to_vec_pretty(&sidecar).unwrap(),
+        pack_dir.join("flows/main.ygtc.resolve.summary.json"),
+        serde_json::to_vec_pretty(&summary).unwrap(),
     )
-    .expect("write sidecar");
+    .expect("write summary");
 }
 
 fn read_zip_entry(path: &Path, entry: &str) -> Vec<u8> {

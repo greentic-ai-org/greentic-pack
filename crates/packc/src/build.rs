@@ -3,7 +3,7 @@ use crate::config::{
     AssetConfig, ComponentConfig, ComponentOperationConfig, FlowConfig, PackConfig,
 };
 use crate::extensions::validate_components_extension;
-use crate::flow_resolve::enforce_sidecar_mappings;
+use crate::flow_resolve::load_flow_resolve_summary;
 use crate::runtime::{NetworkPolicy, RuntimeContext};
 use anyhow::{Context, Result, anyhow};
 use greentic_distributor_client::{DistClient, DistOptions};
@@ -13,6 +13,7 @@ use greentic_flow::loader::load_ygtc_from_path;
 use greentic_pack::builder::SbomEntry;
 use greentic_pack::pack_lock::read_pack_lock;
 use greentic_types::component_source::ComponentSourceRef;
+use greentic_types::flow_resolve_summary::FlowResolveSummaryV1;
 use greentic_types::pack::extensions::component_manifests::{
     ComponentManifestIndexEntryV1, ComponentManifestIndexV1, EXT_COMPONENT_MANIFEST_INDEX_V1,
     ManifestEncoding,
@@ -266,8 +267,7 @@ fn assemble_manifest(
     secret_requirements: &[SecretRequirement],
 ) -> Result<BuildProducts> {
     let components = build_components(&config.components)?;
-    let component_ids: BTreeSet<String> = config.components.iter().map(|c| c.id.clone()).collect();
-    let (flows, flow_files) = build_flows(&config.flows, &component_ids, pack_root)?;
+    let (flows, flow_files) = build_flows(&config.flows, pack_root)?;
     let dependencies = build_dependencies(&config.dependencies)?;
     let assets = collect_assets(&config.assets, pack_root)?;
     let component_manifests: Vec<_> = components.iter().map(|c| c.0.clone()).collect();
@@ -572,7 +572,6 @@ fn build_bootstrap(
 
 fn build_flows(
     configs: &[FlowConfig],
-    component_ids: &BTreeSet<String>,
     pack_root: &Path,
 ) -> Result<(Vec<PackFlowEntry>, Vec<FlowFile>)> {
     let mut seen = BTreeSet::new();
@@ -592,10 +591,10 @@ fn build_flows(
             )
         })?;
         normalize_legacy_component_exec_ids(&mut flow)?;
-        resolve_missing_component_ids(&mut flow, component_ids).with_context(|| {
+        let summary = load_flow_resolve_summary(pack_root, cfg, &flow)?;
+        apply_summary_component_ids(&mut flow, &summary).with_context(|| {
             format!("failed to resolve component ids in {}", cfg.file.display())
         })?;
-        enforce_sidecar_mappings(pack_root, cfg, &flow)?;
 
         let flow_id = flow.id.to_string();
         if !seen.insert(flow_id.clone()) {
@@ -633,52 +632,27 @@ fn build_flows(
     Ok((entries, flow_files))
 }
 
-fn infer_component_id_for_node(node_id: &str, components: &BTreeSet<String>) -> Result<String> {
-    if components.is_empty() {
-        anyhow::bail!(
-            "node {} is missing component id and no packaged components are available to resolve it",
-            node_id
-        );
-    }
-
-    if components.contains(node_id) {
-        return Ok(node_id.to_string());
-    }
-
-    let suffix_matches: Vec<_> = components
-        .iter()
-        .filter(|candidate| candidate.rsplit('.').next() == Some(node_id))
-        .collect();
-    if suffix_matches.len() == 1 {
-        return Ok((*suffix_matches[0]).clone());
-    }
-
-    if components.len() == 1 {
-        return Ok(components
-            .iter()
-            .next()
-            .expect("component set is non-empty")
-            .clone());
-    }
-
-    anyhow::bail!(
-        "node {} is missing component id and could not be matched to packaged components: {}",
-        node_id,
-        components.iter().cloned().collect::<Vec<_>>().join(", ")
-    );
-}
-
-fn resolve_missing_component_ids(flow: &mut Flow, components: &BTreeSet<String>) -> Result<()> {
+fn apply_summary_component_ids(flow: &mut Flow, summary: &FlowResolveSummaryV1) -> Result<()> {
     for (node_id, node) in flow.nodes.iter_mut() {
-        if !node.component.id.as_str().is_empty() && node.component.id.as_str() != "component.exec"
-        {
+        let resolved = summary.nodes.get(node_id.as_str()).ok_or_else(|| {
+            anyhow!(
+                "flow resolve summary missing node {} (expected component id for node)",
+                node_id
+            )
+        })?;
+        let summary_id = resolved.component_id.as_str();
+        if node.component.id.as_str().is_empty() || node.component.id.as_str() == "component.exec" {
+            node.component.id = resolved.component_id.clone();
             continue;
         }
-
-        let component_id = infer_component_id_for_node(node_id.as_str(), components)?;
-
-        node.component.id = ComponentId::new(&component_id)
-            .with_context(|| format!("invalid component id resolved for node {}", node_id))?;
+        if node.component.id.as_str() != summary_id {
+            anyhow::bail!(
+                "node {} component id {} does not match resolve summary {}",
+                node_id,
+                node.component.id.as_str(),
+                summary_id
+            );
+        }
     }
     Ok(())
 }
@@ -1626,24 +1600,25 @@ nodes:
             fs::create_dir_all(cache_path.parent().expect("cache parent")).expect("cache dir");
             fs::write(&cache_path, cached_bytes).expect("write cached");
 
-            let sidecar = serde_json::json!({
+            let summary = serde_json::json!({
                 "schema_version": 1,
-                "flow": "flows/main.ygtc",
+                "flow": "main.ygtc",
                 "nodes": {
                     "call": {
+                        "component_id": "dummy.component",
                         "source": {
                             "kind": "oci",
-                            "ref": format!("oci://ghcr.io/demo/component@{digest}"),
-                            "digest": digest,
-                        }
+                            "ref": format!("oci://ghcr.io/demo/component@{digest}")
+                        },
+                        "digest": digest
                     }
                 }
             });
             fs::write(
-                flow_path.with_extension("ygtc.resolve.json"),
-                serde_json::to_vec_pretty(&sidecar).expect("sidecar json"),
+                flow_path.with_extension("ygtc.resolve.summary.json"),
+                serde_json::to_vec_pretty(&summary).expect("summary json"),
             )
-            .expect("write sidecar");
+            .expect("write summary");
 
             let pack_yaml = r#"pack_id: demo.lock-bundle
 version: 0.1.0
@@ -1743,24 +1718,25 @@ nodes:
 
             let digest =
                 "sha256:0904bee6ecd737506265e3f38f3e4fe6b185c20fd1b0e7c06ce03cdeedc00340";
-            let sidecar = serde_json::json!({
+            let summary = serde_json::json!({
                 "schema_version": 1,
-                "flow": "flows/main.ygtc",
+                "flow": "main.ygtc",
                 "nodes": {
                     "call": {
+                        "component_id": "dummy.component",
                         "source": {
                             "kind": "oci",
-                            "ref": format!("oci://ghcr.io/greentic-ai/components/templates@{digest}"),
-                            "digest": digest,
-                        }
+                            "ref": format!("oci://ghcr.io/greentic-ai/components/templates@{digest}")
+                        },
+                        "digest": digest
                     }
                 }
             });
             fs::write(
-                flow_path.with_extension("ygtc.resolve.json"),
-                serde_json::to_vec_pretty(&sidecar).expect("sidecar json"),
+                flow_path.with_extension("ygtc.resolve.summary.json"),
+                serde_json::to_vec_pretty(&summary).expect("summary json"),
             )
-            .expect("write sidecar");
+            .expect("write summary");
 
             let pack_yaml = r#"pack_id: demo.lock-online
 version: 0.1.0

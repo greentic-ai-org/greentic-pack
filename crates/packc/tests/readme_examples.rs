@@ -9,30 +9,42 @@ fn workspace_root() -> PathBuf {
         .join("..")
 }
 
-fn write_weather_sidecar(pack_dir: &Path) {
-    let sidecar_path = pack_dir.join("flows/weather_bot.ygtc.resolve.json");
-    let parent = sidecar_path
+fn write_weather_summary(pack_dir: &Path) {
+    let summary_path = pack_dir.join("flows/weather_bot.ygtc.resolve.summary.json");
+    let parent = summary_path
         .parent()
-        .expect("sidecar parent exists")
+        .expect("summary parent exists")
         .to_path_buf();
     std::fs::create_dir_all(&parent).expect("create flows dir");
     // Use digest-pinned repo refs to satisfy resolver without network.
     let doc = json!({
         "schema_version": 1,
-        "flow": "flows/weather_bot.ygtc",
+        "flow": "weather_bot.ygtc",
         "nodes": {
-            "collect_location": { "source": { "kind": "repo", "ref": "io.3bridges.components.qa@1.0.0", "digest": "sha256:deadbeef" } },
-            "forecast_weather": { "source": { "kind": "repo", "ref": "io.3bridges.components.mcp@1.0.0", "digest": "sha256:deadbeef" } },
-            "weather_text": { "source": { "kind": "local", "path": "../components/templating.handlebars.wasm", "digest": "sha256:deadbeef" } },
+            "collect_location": {
+                "component_id": "qa.process",
+                "source": { "kind": "repo", "ref": "io.3bridges.components.qa@1.0.0" },
+                "digest": "sha256:deadbeef"
+            },
+            "forecast_weather": {
+                "component_id": "mcp.exec",
+                "source": { "kind": "repo", "ref": "io.3bridges.components.mcp@1.0.0" },
+                "digest": "sha256:deadbeef"
+            },
+            "weather_text": {
+                "component_id": "templating.handlebars",
+                "source": { "kind": "local", "path": "../components/templating.handlebars.wasm" },
+                "digest": "sha256:deadbeef"
+            }
         }
     });
-    std::fs::write(sidecar_path, serde_json::to_vec_pretty(&doc).unwrap()).expect("write sidecar");
+    std::fs::write(summary_path, serde_json::to_vec_pretty(&doc).unwrap()).expect("write summary");
 }
 
 #[test]
 fn readme_demo_build_and_doctor() {
     let pack_dir = workspace_root().join("examples/weather-demo");
-    write_weather_sidecar(&pack_dir);
+    write_weather_summary(&pack_dir);
     let temp = tempfile::tempdir().expect("temp dir");
     let gtpack_out = temp.path().join("weather-demo.gtpack");
 

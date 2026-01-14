@@ -1,19 +1,16 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use clap::Args;
-use greentic_distributor_client::{DistClient, DistOptions};
 use greentic_pack::pack_lock::{LockedComponent, PackLockV1, write_pack_lock};
-use greentic_types::flow_resolve::{ComponentSourceRefV1, FlowResolveV1};
-use sha2::{Digest, Sha256};
+use greentic_types::flow_resolve_summary::{FlowResolveSummarySourceRefV1, FlowResolveSummaryV1};
 
 use crate::config::load_pack_config;
-use crate::flow_resolve::discover_flow_resolves;
-use crate::runtime::{NetworkPolicy, RuntimeContext};
+use crate::flow_resolve::read_flow_resolve_summary_for_flow;
+use crate::runtime::RuntimeContext;
 
 #[derive(Debug, Args)]
 pub struct ResolveArgs {
@@ -34,30 +31,11 @@ pub async fn handle(args: ResolveArgs, runtime: &RuntimeContext, emit_path: bool
     let lock_path = resolve_lock_path(&pack_dir, args.lock.as_deref());
 
     let config = load_pack_config(&pack_dir)?;
-    let resolves = discover_flow_resolves(&pack_dir, &config.flows);
-
-    for entry in &resolves {
-        if let Some(msg) = &entry.warning {
-            eprintln!("warning: {msg}");
-        }
-    }
-
     let mut entries: Vec<LockedComponent> = Vec::new();
-    let dist = new_dist_client(runtime);
-
-    for sidecar in resolves {
-        let Some(doc) = sidecar.document else {
-            continue;
-        };
-        collect_from_sidecar(
-            &sidecar.flow_path,
-            &sidecar.flow_id,
-            &doc,
-            &dist,
-            runtime,
-            &mut entries,
-        )
-        .await?;
+    let _ = runtime;
+    for flow in &config.flows {
+        let summary = read_flow_resolve_summary_for_flow(&pack_dir, flow)?;
+        collect_from_summary(&pack_dir, flow, &summary, &mut entries)?;
     }
 
     let lock = PackLockV1::new(entries);
@@ -77,50 +55,29 @@ fn resolve_lock_path(pack_dir: &Path, override_path: Option<&Path>) -> PathBuf {
     }
 }
 
-fn new_dist_client(runtime: &RuntimeContext) -> DistClient {
-    let opts = DistOptions {
-        cache_dir: runtime.cache_dir(),
-        allow_tags: true,
-        offline: runtime.network_policy() == NetworkPolicy::Offline,
-    };
-    DistClient::new(opts)
-}
-
-async fn collect_from_sidecar(
-    flow_path: &Path,
-    flow_id: &str,
-    doc: &FlowResolveV1,
-    dist: &DistClient,
-    runtime: &RuntimeContext,
+fn collect_from_summary(
+    pack_dir: &Path,
+    flow: &crate::config::FlowConfig,
+    doc: &FlowResolveSummaryV1,
     out: &mut Vec<LockedComponent>,
 ) -> Result<()> {
     let mut seen: BTreeMap<String, (String, String)> = BTreeMap::new();
 
     for (node, resolve) in &doc.nodes {
-        let name = format!("{flow_id}___{node}");
+        let name = format!("{}___{node}", flow.id);
         let source_ref = &resolve.source;
         let (reference, digest) = match source_ref {
-            ComponentSourceRefV1::Local { path, digest } => {
-                let abs = normalize_local(flow_path, path)?;
-                let digest = match digest {
-                    Some(d) => d.clone(),
-                    None => compute_sha256(&abs)?,
-                };
-                (format!("file://{}", abs.to_string_lossy()), digest)
+            FlowResolveSummarySourceRefV1::Local { path } => {
+                let abs = normalize_local(pack_dir, flow, path)?;
+                (
+                    format!("file://{}", abs.to_string_lossy()),
+                    resolve.digest.clone(),
+                )
             }
-            ComponentSourceRefV1::Oci { r#ref, digest }
-            | ComponentSourceRefV1::Repo { r#ref, digest }
-            | ComponentSourceRefV1::Store { r#ref, digest, .. } => {
-                if let Some(d) = digest {
-                    (format_reference(source_ref), d.clone())
-                } else {
-                    runtime.require_online("resolve component refs")?;
-                    let resolved = dist
-                        .resolve_ref(&format_reference(source_ref))
-                        .await
-                        .map_err(|err| anyhow!("resolve {} failed: {}", r#ref, err))?;
-                    (format_reference(source_ref), resolved.digest)
-                }
+            FlowResolveSummarySourceRefV1::Oci { .. }
+            | FlowResolveSummarySourceRefV1::Repo { .. }
+            | FlowResolveSummarySourceRefV1::Store { .. } => {
+                (format_reference(source_ref), resolve.digest.clone())
             }
         };
         seen.insert(name, (reference, digest));
@@ -137,7 +94,16 @@ async fn collect_from_sidecar(
     Ok(())
 }
 
-fn normalize_local(flow_path: &Path, rel: &str) -> Result<PathBuf> {
+fn normalize_local(
+    pack_dir: &Path,
+    flow: &crate::config::FlowConfig,
+    rel: &str,
+) -> Result<PathBuf> {
+    let flow_path = if flow.file.is_absolute() {
+        flow.file.clone()
+    } else {
+        pack_dir.join(&flow.file)
+    };
     let parent = flow_path
         .parent()
         .ok_or_else(|| anyhow!("flow path {} has no parent", flow_path.display()))?;
@@ -145,32 +111,24 @@ fn normalize_local(flow_path: &Path, rel: &str) -> Result<PathBuf> {
     Ok(parent.join(rel))
 }
 
-fn compute_sha256(path: &Path) -> Result<String> {
-    let bytes = fs::read(path)
-        .with_context(|| format!("failed to read local component {}", path.display()))?;
-    let mut sha = Sha256::new();
-    sha.update(&bytes);
-    Ok(format!("sha256:{:x}", sha.finalize()))
-}
-
-fn format_reference(source: &ComponentSourceRefV1) -> String {
+fn format_reference(source: &FlowResolveSummarySourceRefV1) -> String {
     match source {
-        ComponentSourceRefV1::Local { path, .. } => path.clone(),
-        ComponentSourceRefV1::Oci { r#ref, .. } => {
+        FlowResolveSummarySourceRefV1::Local { path } => path.clone(),
+        FlowResolveSummarySourceRefV1::Oci { r#ref } => {
             if r#ref.contains("://") {
                 r#ref.clone()
             } else {
                 format!("oci://{}", r#ref)
             }
         }
-        ComponentSourceRefV1::Repo { r#ref, .. } => {
+        FlowResolveSummarySourceRefV1::Repo { r#ref } => {
             if r#ref.contains("://") {
                 r#ref.clone()
             } else {
                 format!("repo://{}", r#ref)
             }
         }
-        ComponentSourceRefV1::Store { r#ref, .. } => {
+        FlowResolveSummarySourceRefV1::Store { r#ref } => {
             if r#ref.contains("://") {
                 r#ref.clone()
             } else {

@@ -174,7 +174,9 @@ flows:
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("missing resolve entries") || stderr.contains("requires a resolve sidecar"),
+        stderr.contains("missing resolve summary entries")
+            || stderr.contains("resolve summary")
+            || stderr.contains("requires a resolve sidecar"),
         "expected actionable error, got stderr={}",
         stderr
     );

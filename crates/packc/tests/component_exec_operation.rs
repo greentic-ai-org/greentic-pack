@@ -76,24 +76,25 @@ nodes:
 "#
     );
     fs::write(pack_dir.join("flows").join("main.ygtc"), flow).expect("flow file");
-    let sidecar = json!({
+    let summary = json!({
         "schema_version": 1,
-        "flow": "flows/main.ygtc",
+        "flow": "main.ygtc",
         "nodes": {
             "hello-world": {
+                "component_id": COMPONENT_ID,
                 "source": {
                     "kind": "local",
-                    "path": "../components/hello-world.wasm",
-                    "digest": digest
-                }
+                    "path": "../components/hello-world.wasm"
+                },
+                "digest": digest
             }
         }
     });
     fs::write(
-        pack_dir.join("flows/main.ygtc.resolve.json"),
-        serde_json::to_vec_pretty(&sidecar).unwrap(),
+        pack_dir.join("flows/main.ygtc.resolve.summary.json"),
+        serde_json::to_vec_pretty(&summary).unwrap(),
     )
-    .expect("write sidecar");
+    .expect("write summary");
 
     let manifest_path = pack_dir.join("dist/manifest.cbor");
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))

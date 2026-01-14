@@ -81,22 +81,25 @@ nodes:
     );
     fs::write(pack_dir.join("flows/main.ygtc"), flow).expect("flow file");
 
-    let sidecar = format!(
-        r#"{{
-  "schema_version": 1,
-  "flow": "flows/main.ygtc",
-  "nodes": {{
-    "call": {{
-      "source": {{
-        "kind": "local",
-        "path": "../components/demo.wasm",
-        "digest": "{digest}"
-      }}
-    }}
-  }}
-}}"#
-    );
-    fs::write(pack_dir.join("flows/main.ygtc.resolve.json"), sidecar).expect("write sidecar");
+    let summary = serde_json::json!({
+        "schema_version": 1,
+        "flow": "main.ygtc",
+        "nodes": {
+            "call": {
+                "component_id": COMPONENT_ID,
+                "source": {
+                    "kind": "local",
+                    "path": "../components/demo.wasm"
+                },
+                "digest": digest
+            }
+        }
+    });
+    fs::write(
+        pack_dir.join("flows/main.ygtc.resolve.summary.json"),
+        serde_json::to_vec_pretty(&summary).expect("serialize summary"),
+    )
+    .expect("write summary");
 }
 
 fn build_pack_with_packc() -> (TempDir, PathBuf, greentic_pack::reader::PackLoad) {

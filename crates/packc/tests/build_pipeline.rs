@@ -93,22 +93,23 @@ flows:
     .unwrap();
 
     let digest = format!("sha256:{:x}", Sha256::digest(fs::read(&wasm_path).unwrap()));
-    let sidecar = json!({
+    let summary = json!({
         "schema_version": 1,
-        "flow": "flows/main.ygtc",
+        "flow": "main.ygtc",
         "nodes": {
             "call": {
+                "component_id": "dev.hello-world",
                 "source": {
                     "kind": "local",
-                    "path": "../components/dev.hello-world/dev.hello-world.component.wasm",
-                    "digest": digest
-                }
+                    "path": "../components/dev.hello-world/dev.hello-world.component.wasm"
+                },
+                "digest": digest
             }
         }
     });
     fs::write(
-        pack_dir.join("flows/main.ygtc.resolve.json"),
-        serde_json::to_vec_pretty(&sidecar).unwrap(),
+        pack_dir.join("flows/main.ygtc.resolve.summary.json"),
+        serde_json::to_vec_pretty(&summary).unwrap(),
     )
     .unwrap();
 
@@ -191,22 +192,23 @@ nodes:
     .unwrap();
 
     let digest = format!("sha256:{:x}", Sha256::digest(fs::read(&wasm_path).unwrap()));
-    let sidecar = json!({
+    let summary = json!({
         "schema_version": 1,
-        "flow": "flows/main.ygtc",
+        "flow": "main.ygtc",
         "nodes": {
             "call": {
+                "component_id": "dev.auto",
                 "source": {
                     "kind": "local",
-                    "path": "../components/auto.wasm",
-                    "digest": digest
-                }
+                    "path": "../components/auto.wasm"
+                },
+                "digest": digest
             }
         }
     });
     fs::write(
-        pack_dir.join("flows/main.ygtc.resolve.json"),
-        serde_json::to_vec_pretty(&sidecar).unwrap(),
+        pack_dir.join("flows/main.ygtc.resolve.summary.json"),
+        serde_json::to_vec_pretty(&summary).unwrap(),
     )
     .unwrap();
 

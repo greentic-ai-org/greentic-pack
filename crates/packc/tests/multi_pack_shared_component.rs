@@ -62,7 +62,7 @@ fn link_shared_component(wasm_src: &Path, pack_dir: &Path) -> PathBuf {
 fn write_pack_files(pack_dir: &Path, wasm_src: &Path, pack_name: &str) {
     fs::create_dir_all(pack_dir.join("flows")).expect("pack flow dir");
     let component_path = link_shared_component(wasm_src, pack_dir);
-    write_sidecar(pack_dir, wasm_src);
+    write_summary(pack_dir, wasm_src);
 
     let pack_yaml = format!(
         r#"pack_id: dev.local.{pack_name}
@@ -124,10 +124,10 @@ nodes:
     fs::write(pack_dir.join("flows").join("main.ygtc"), flow).expect("flow file");
 }
 
-fn write_sidecar(pack_dir: &Path, wasm_src: &Path) {
-    let sidecar_path = pack_dir.join("flows/main.ygtc.resolve.json");
-    let parent = sidecar_path.parent().expect("sidecar parent");
-    fs::create_dir_all(parent).expect("sidecar dir");
+fn write_summary(pack_dir: &Path, wasm_src: &Path) {
+    let summary_path = pack_dir.join("flows/main.ygtc.resolve.summary.json");
+    let parent = summary_path.parent().expect("summary parent");
+    fs::create_dir_all(parent).expect("summary dir");
     let digest = format!(
         "sha256:{:x}",
         Sha256::digest(fs::read(wasm_src).expect("read wasm"))
@@ -136,22 +136,23 @@ fn write_sidecar(pack_dir: &Path, wasm_src: &Path) {
     let rel_path = "../components/shared.component.wasm";
     let doc = serde_json::json!({
         "schema_version": 1,
-        "flow": "flows/main.ygtc",
+        "flow": "main.ygtc",
         "nodes": {
             "call": {
+                "component_id": "ai.greentic.shared-component",
                 "source": {
                     "kind": "local",
-                    "path": rel_path,
-                    "digest": digest,
-                }
+                    "path": rel_path
+                },
+                "digest": digest
             }
         }
     });
     fs::write(
-        &sidecar_path,
-        serde_json::to_vec_pretty(&doc).expect("serialize sidecar"),
+        &summary_path,
+        serde_json::to_vec_pretty(&doc).expect("serialize summary"),
     )
-    .expect("write sidecar");
+    .expect("write summary");
 }
 
 fn build_pack(pack_dir: &Path, gtpack_name: &str) -> (PathBuf, PathBuf) {

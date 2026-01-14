@@ -1,0 +1,30 @@
+{
+  "flow": "weather_bot.ygtc",
+  "nodes": {
+    "collect_location": {
+      "component_id": "qa.process",
+      "digest": "sha256:deadbeef",
+      "source": {
+        "kind": "repo",
+        "ref": "io.3bridges.components.qa@1.0.0"
+      }
+    },
+    "forecast_weather": {
+      "component_id": "mcp.exec",
+      "digest": "sha256:deadbeef",
+      "source": {
+        "kind": "repo",
+        "ref": "io.3bridges.components.mcp@1.0.0"
+      }
+    },
+    "weather_text": {
+      "component_id": "templating.handlebars",
+      "digest": "sha256:93a44bbb96c751218e4c00d479e4c14358122a389acca16205b1e4d0dc5f9476",
+      "source": {
+        "kind": "local",
+        "path": "../components/templating.handlebars.wasm"
+      }
+    }
+  },
+  "schema_version": 1
+}
