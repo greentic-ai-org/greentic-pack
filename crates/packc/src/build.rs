@@ -375,7 +375,8 @@ fn resolve_component_artifacts(
 
 fn manifest_from_config(cfg: &ComponentConfig) -> Result<ComponentManifest> {
     Ok(ComponentManifest {
-        id: ComponentId::new(cfg.id.clone()).context("invalid component id")?,
+        id: ComponentId::new(cfg.id.clone())
+            .with_context(|| format!("invalid component id {}", cfg.id))?,
         version: Version::parse(&cfg.version)
             .context("invalid component version (expected semver)")?,
         supports: cfg.supports.iter().map(|k| k.to_kind()).collect(),
@@ -1702,7 +1703,7 @@ flows:
             let mut archive = ZipArchive::new(File::open(&gtpack_path).expect("open gtpack"))
                 .expect("read gtpack");
             assert!(
-                archive.by_name("components/main::call.wasm").is_ok(),
+                archive.by_name("components/main___call.wasm").is_ok(),
                 "missing lock component artifact in gtpack"
             );
         });
@@ -1821,7 +1822,7 @@ flows:
                 ZipArchive::new(File::open(&gtpack_path).expect("open gtpack"))
                     .expect("read gtpack");
             assert!(
-                archive.by_name("components/main::call.wasm").is_ok(),
+                archive.by_name("components/main___call.wasm").is_ok(),
                 "missing lock component artifact in gtpack"
             );
         });

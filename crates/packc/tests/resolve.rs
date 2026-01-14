@@ -150,6 +150,7 @@ fn resolve_writes_lockfile_with_digest() {
     assert_eq!(json["schema_version"], 1);
     let components = json["components"].as_array().unwrap();
     assert_eq!(components.len(), 1);
+    assert_eq!(components[0]["name"].as_str().unwrap(), "main___call");
     assert!(
         components[0]["digest"]
             .as_str()

@@ -2,32 +2,32 @@
   "schema_version": 1,
   "components": [
     {
-      "name": "qa_answer_flow::call_llm",
+      "name": "qa_answer_flow___call_llm",
       "ref": "repo://io.3bridges.components.llm.openai@1.0.0",
       "digest": "sha256:deadbeef"
     },
     {
-      "name": "qa_answer_flow::package_messages",
+      "name": "qa_answer_flow___package_messages",
       "ref": "repo://io.3bridges.components.flow@1.0.0",
       "digest": "sha256:deadbeef"
     },
     {
-      "name": "qa_orchestrator::call_specialist",
+      "name": "qa_orchestrator___call_specialist",
       "ref": "repo://io.3bridges.components.flow@1.0.0",
       "digest": "sha256:deadbeef"
     },
     {
-      "name": "qa_orchestrator::collect_question",
+      "name": "qa_orchestrator___collect_question",
       "ref": "repo://io.3bridges.components.qa@1.0.0",
       "digest": "sha256:deadbeef"
     },
     {
-      "name": "qa_orchestrator::load_profile",
+      "name": "qa_orchestrator___load_profile",
       "ref": "repo://io.3bridges.components.state@1.0.0",
       "digest": "sha256:deadbeef"
     },
     {
-      "name": "qa_orchestrator::respond_to_user",
+      "name": "qa_orchestrator___respond_to_user",
       "ref": "repo://io.3bridges.components.messaging@1.0.0",
       "digest": "sha256:deadbeef"
     }

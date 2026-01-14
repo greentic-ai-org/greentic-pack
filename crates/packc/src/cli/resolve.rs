@@ -97,7 +97,7 @@ async fn collect_from_sidecar(
     let mut seen: BTreeMap<String, (String, String)> = BTreeMap::new();
 
     for (node, resolve) in &doc.nodes {
-        let name = format!("{flow_id}::{node}");
+        let name = format!("{flow_id}___{node}");
         let source_ref = &resolve.source;
         let (reference, digest) = match source_ref {
             ComponentSourceRefV1::Local { path, digest } => {

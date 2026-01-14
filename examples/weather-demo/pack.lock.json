@@ -2,18 +2,18 @@
   "schema_version": 1,
   "components": [
     {
-      "name": "weather_bot::collect_location",
+      "name": "weather_bot___collect_location",
       "ref": "repo://io.3bridges.components.qa@1.0.0",
       "digest": "sha256:deadbeef"
     },
     {
-      "name": "weather_bot::forecast_weather",
+      "name": "weather_bot___forecast_weather",
       "ref": "repo://io.3bridges.components.mcp@1.0.0",
       "digest": "sha256:deadbeef"
     },
     {
-      "name": "weather_bot::weather_text",
-      "ref": "file:///Users/maarten/Documents/GitHub/agentic/greentic-pack/examples/weather-demo/flows/../components/templating.handlebars.wasm",
+      "name": "weather_bot___weather_text",
+      "ref": "file:///projects/ai/greentic-ng/greentic-pack/examples/weather-demo/flows/../components/templating.handlebars.wasm",
       "digest": "sha256:93a44bbb96c751218e4c00d479e4c14358122a389acca16205b1e4d0dc5f9476"
     }
   ]
