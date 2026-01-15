@@ -219,7 +219,7 @@ fn read_or_write_flow_resolve_summary(
                 err
             )
         })?;
-        write_flow_resolve_summary_for_flow(flow_path, &sidecar).with_context(|| {
+        write_flow_resolve_summary_safe(flow_path, &sidecar).with_context(|| {
             format!(
                 "failed to generate flow resolve summary for {}",
                 flow_path.display()
@@ -234,6 +234,19 @@ fn read_or_write_flow_resolve_summary(
             err
         )
     })
+}
+
+fn write_flow_resolve_summary_safe(flow_path: &Path, sidecar: &FlowResolveV1) -> Result<PathBuf> {
+    if tokio::runtime::Handle::try_current().is_ok() {
+        let flow_path = flow_path.to_path_buf();
+        let sidecar = sidecar.clone();
+        let join =
+            std::thread::spawn(move || write_flow_resolve_summary_for_flow(&flow_path, &sidecar));
+        join.join()
+            .map_err(|_| anyhow!("flow resolve summary generation panicked"))?
+    } else {
+        write_flow_resolve_summary_for_flow(flow_path, sidecar)
+    }
 }
 
 fn enforce_summary_mappings(

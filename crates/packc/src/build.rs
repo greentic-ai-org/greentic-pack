@@ -1064,6 +1064,7 @@ async fn collect_lock_component_artifacts(
         cache_dir: runtime.cache_dir(),
         allow_tags: true,
         offline: runtime.network_policy() == NetworkPolicy::Offline,
+        allow_insecure_local_http: false,
     });
 
     let mut artifacts = Vec::new();

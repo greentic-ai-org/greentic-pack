@@ -269,6 +269,134 @@ flows: []
 }
 
 #[test]
+fn build_generates_summary_with_cached_oci_components() {
+    let temp = tempdir().unwrap();
+    let pack_dir = temp.path();
+    fs::create_dir_all(pack_dir.join("components")).unwrap();
+    let wasm_path = pack_dir.join("components/remote.wasm");
+    write_stub_wasm(&wasm_path);
+
+    fs::create_dir_all(pack_dir.join("flows")).unwrap();
+    fs::write(
+        pack_dir.join("flows/main.ygtc"),
+        r#"id: main
+type: messaging
+start: call
+nodes:
+  call:
+    component.exec:
+      component: remote.component
+      operation: handle_message
+      input:
+        text: "hi"
+    routing:
+      - out: true
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        pack_dir.join("pack.yaml"),
+        r#"pack_id: dev.local.oci-pack
+version: 0.1.0
+kind: application
+publisher: Test
+components:
+  - id: "remote.component"
+    version: "0.1.0"
+    world: "greentic:component/component@0.5.0"
+    supports: ["messaging"]
+    profiles:
+      default: "stateless"
+      supported: ["stateless"]
+    capabilities:
+      wasi: {}
+      host: {}
+    operations:
+      - name: "handle_message"
+        input_schema: {}
+        output_schema: {}
+    wasm: "components/remote.wasm"
+flows:
+  - id: main
+    file: flows/main.ygtc
+    tags: [default]
+    entrypoints: [main]
+"#,
+    )
+    .unwrap();
+
+    let cached_bytes = b"cached-component";
+    let digest = format!("sha256:{:x}", Sha256::digest(cached_bytes));
+    let cache_dir = temp.path().join("cache");
+    let cached_component_dir = cache_dir.join(digest.trim_start_matches("sha256:"));
+    fs::create_dir_all(&cached_component_dir).unwrap();
+    fs::write(cached_component_dir.join("component.wasm"), cached_bytes).unwrap();
+    let manifest = serde_json::json!({
+        "id": "remote.component",
+        "version": "0.1.0",
+        "world": "greentic:component/component@0.5.0",
+        "artifacts": {
+            "component_wasm": "component.wasm"
+        }
+    });
+    fs::write(
+        cached_component_dir.join("component.manifest.json"),
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+
+    let sidecar = json!({
+        "schema_version": 1,
+        "flow": "main.ygtc.resolve.json",
+        "nodes": {
+            "call": {
+                "source": {
+                    "kind": "oci",
+                    "ref": format!("ghcr.io/demo/component@{digest}"),
+                    "digest": digest
+                },
+                "mode": "pinned"
+            }
+        }
+    });
+    fs::write(
+        pack_dir.join("flows/main.ygtc.resolve.json"),
+        serde_json::to_vec_pretty(&sidecar).unwrap(),
+    )
+    .unwrap();
+
+    let manifest_out = pack_dir.join("dist/manifest.cbor");
+    let gtpack_out = pack_dir.join("dist/pack.gtpack");
+
+    let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
+        .current_dir(pack_dir)
+        .env("GREENTIC_DIST_CACHE_DIR", &cache_dir)
+        .env("GREENTIC_DIST_OFFLINE", "1")
+        .args([
+            "--cache-dir",
+            cache_dir.to_str().unwrap(),
+            "--offline",
+            "build",
+            "--in",
+            pack_dir.to_str().unwrap(),
+            "--manifest",
+            manifest_out.to_str().unwrap(),
+            "--gtpack-out",
+            gtpack_out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run packc build");
+    assert!(
+        output.status.success(),
+        "packc build failed:\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(gtpack_out.exists(), "gtpack should be written");
+}
+
+#[test]
 fn build_no_update_skips_update() {
     let temp = tempdir().unwrap();
     let pack_dir = temp.path();
