@@ -97,6 +97,27 @@ nodes:
 }}"#
     );
     fs::write(pack_dir.join("flows/main.ygtc.resolve.json"), sidecar).expect("write sidecar");
+    let summary = format!(
+        r#"{{
+  "schema_version": 1,
+  "flow": "main.ygtc",
+  "nodes": {{
+    "call": {{
+      "component_id": "demo.component",
+      "source": {{
+        "kind": "local",
+        "path": "../components/demo.wasm"
+      }},
+      "digest": "{digest}"
+    }}
+  }}
+}}"#
+    );
+    fs::write(
+        pack_dir.join("flows/main.ygtc.resolve.summary.json"),
+        summary,
+    )
+    .expect("write summary");
 
     let pack_path = temp.path().join("pack.gtpack");
     Command::new("cargo")
