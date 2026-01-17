@@ -90,6 +90,10 @@ fn collect_from_summary(
             r#ref: reference,
             digest,
             component_id: Some(component_id),
+            bundled: false,
+            bundled_path: None,
+            wasm_sha256: None,
+            resolved_digest: None,
         });
     }
 
