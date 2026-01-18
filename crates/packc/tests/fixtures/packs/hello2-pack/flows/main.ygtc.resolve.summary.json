@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "flow": "main.ygtc",
+  "nodes": {
+    "templates": {
+      "component_id": "ai.greentic.component-templates",
+      "source": {
+        "kind": "oci",
+        "ref": "oci://ghcr.io/greentic-ai/components/templates:latest"
+      },
+      "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    }
+  }
+}

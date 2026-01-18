@@ -9,5 +9,6 @@ pub mod new;
 pub mod path_safety;
 pub mod runtime;
 pub mod telemetry;
+pub mod validator;
 
 pub use cli::BuildArgs;

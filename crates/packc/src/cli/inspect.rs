@@ -19,11 +19,15 @@ use greentic_types::pack::extensions::component_sources::{
 use greentic_types::pack_manifest::PackManifest;
 use greentic_types::provider::ProviderDecl;
 use greentic_types::validate::{Diagnostic, Severity, ValidationReport};
+use serde::Serialize;
 use serde_json::Value;
 use tempfile::TempDir;
 
 use crate::build;
 use crate::runtime::RuntimeContext;
+use crate::validator::{
+    DEFAULT_VALIDATOR_ALLOW, ValidatorConfig, ValidatorPolicy, run_wasm_validators,
+};
 
 #[derive(Debug, Parser)]
 pub struct InspectArgs {
@@ -62,6 +66,26 @@ pub struct InspectArgs {
     /// Disable validation
     #[arg(long = "no-validate", default_value_t = false)]
     pub no_validate: bool,
+
+    /// Directory containing validator packs (.gtpack)
+    #[arg(long, value_name = "DIR", default_value = ".greentic/validators")]
+    pub validators_root: PathBuf,
+
+    /// Validator pack or component reference (path or oci://...)
+    #[arg(long, value_name = "REF")]
+    pub validator_pack: Vec<String>,
+
+    /// Allowed OCI prefixes for validator refs
+    #[arg(long, value_name = "PREFIX", default_value = DEFAULT_VALIDATOR_ALLOW)]
+    pub validator_allow: Vec<String>,
+
+    /// Validator cache directory
+    #[arg(long, value_name = "DIR", default_value = ".greentic/cache/validators")]
+    pub validator_cache_dir: PathBuf,
+
+    /// Validator loading policy
+    #[arg(long, value_enum, default_value = "optional")]
+    pub validator_policy: ValidatorPolicy,
 }
 
 pub async fn handle(args: InspectArgs, json: bool, runtime: &RuntimeContext) -> Result<()> {
@@ -80,7 +104,7 @@ pub async fn handle(args: InspectArgs, json: bool, runtime: &RuntimeContext) -> 
         }
     };
     let validation = if validate_enabled {
-        Some(run_pack_validation(&load))
+        Some(run_pack_validation(&load, &args, runtime).await?)
     } else {
         None
     };
@@ -109,7 +133,7 @@ pub async fn handle(args: InspectArgs, json: bool, runtime: &RuntimeContext) -> 
     if validate_enabled
         && validation
             .as_ref()
-            .map(ValidationReport::has_errors)
+            .map(|report| report.has_errors)
             .unwrap_or(false)
     {
         bail!("pack validation failed");
@@ -197,7 +221,7 @@ async fn inspect_source_dir(
     inspect_pack_file(&gtpack_out)
 }
 
-fn print_human(load: &PackLoad, validation: Option<&ValidationReport>) {
+fn print_human(load: &PackLoad, validation: Option<&ValidationOutput>) {
     let manifest = &load.manifest;
     let report = &load.report;
     println!(
@@ -314,7 +338,25 @@ fn print_human(load: &PackLoad, validation: Option<&ValidationReport>) {
     }
 }
 
-fn run_pack_validation(load: &PackLoad) -> ValidationReport {
+#[derive(Clone, Debug, Serialize)]
+struct ValidationOutput {
+    #[serde(flatten)]
+    report: ValidationReport,
+    has_errors: bool,
+    sources: Vec<crate::validator::ValidatorSourceReport>,
+}
+
+fn has_error_diagnostics(diagnostics: &[Diagnostic]) -> bool {
+    diagnostics
+        .iter()
+        .any(|diag| matches!(diag.severity, Severity::Error))
+}
+
+async fn run_pack_validation(
+    load: &PackLoad,
+    args: &InspectArgs,
+    runtime: &RuntimeContext,
+) -> Result<ValidationOutput> {
     let ctx = ValidateCtx::from_pack_load(load);
     let validators: Vec<Box<dyn greentic_types::validate::PackValidator>> = vec![
         Box::new(ReferencedFilesExistValidator::new(ctx.clone())),
@@ -323,7 +365,7 @@ fn run_pack_validation(load: &PackLoad) -> ValidationReport {
         Box::new(ComponentReferencesExistValidator),
     ];
 
-    if let Some(manifest) = load.gpack_manifest.as_ref() {
+    let mut report = if let Some(manifest) = load.gpack_manifest.as_ref() {
         run_validators(manifest, &ctx, &validators)
     } else {
         ValidationReport {
@@ -341,18 +383,37 @@ fn run_pack_validation(load: &PackLoad) -> ValidationReport {
                 data: Value::Null,
             }],
         }
-    }
+    };
+
+    let config = ValidatorConfig {
+        validators_root: args.validators_root.clone(),
+        validator_packs: args.validator_pack.clone(),
+        validator_allow: args.validator_allow.clone(),
+        validator_cache_dir: args.validator_cache_dir.clone(),
+        policy: args.validator_policy,
+    };
+
+    let wasm_result = run_wasm_validators(load, &config, runtime).await?;
+    report.diagnostics.extend(wasm_result.diagnostics);
+
+    let has_errors = has_error_diagnostics(&report.diagnostics) || wasm_result.missing_required;
+
+    Ok(ValidationOutput {
+        report,
+        has_errors,
+        sources: wasm_result.sources,
+    })
 }
 
-fn print_validation(report: &ValidationReport) {
-    let (info, warn, error) = validation_counts(report);
+fn print_validation(report: &ValidationOutput) {
+    let (info, warn, error) = validation_counts(&report.report);
     println!("Validation:");
     println!("  Info: {info} Warn: {warn} Error: {error}");
-    if report.diagnostics.is_empty() {
+    if report.report.diagnostics.is_empty() {
         println!("  - none");
         return;
     }
-    for diag in &report.diagnostics {
+    for diag in &report.report.diagnostics {
         let sev = match diag.severity {
             Severity::Info => "INFO",
             Severity::Warn => "WARN",

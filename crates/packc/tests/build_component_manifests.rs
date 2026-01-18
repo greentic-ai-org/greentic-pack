@@ -8,37 +8,89 @@ use tempfile::TempDir;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
+const COMPONENT_ID: &str = "ai.greentic.component-templates";
+const COMPONENT_VERSION: &str = "0.1.2";
+const COMPONENT_WORLD: &str = "greentic:component/component@0.5.0";
+const COMPONENT_DIGEST: &str =
+    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
 }
 
-fn hello2_fixture() -> PathBuf {
+fn fixture_dir(name: &str) -> PathBuf {
     workspace_root()
-        .join("..")
+        .join("crates")
+        .join("packc")
         .join("tests")
-        .join("hello2-pack")
+        .join("fixtures")
+        .join("packs")
+        .join(name)
 }
 
-fn copy_fixture(temp: &TempDir) -> PathBuf {
-    let dest = temp.path().join("hello2-pack");
-    let src = hello2_fixture();
-    for entry in WalkDir::new(&src) {
-        let entry = entry.expect("walk fixture");
+fn copy_fixture_dir(src: &Path, dest: &Path) {
+    for entry in WalkDir::new(src).into_iter().filter_map(Result::ok) {
         let path = entry.path();
-        let rel = path.strip_prefix(&src).expect("relative path");
-        let target = dest.join(rel);
+        let rel = path.strip_prefix(src).expect("fixture path strip");
+        let dest_path = dest.join(rel);
         if entry.file_type().is_dir() {
-            fs::create_dir_all(&target).expect("create dir");
-        } else if entry.file_type().is_file() {
-            if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent).expect("create parent dir");
+            fs::create_dir_all(&dest_path).expect("create fixture dir");
+        } else {
+            if let Some(parent) = dest_path.parent() {
+                fs::create_dir_all(parent).expect("create fixture file dir");
             }
-            fs::copy(path, &target).expect("copy file");
+            fs::copy(path, &dest_path).expect("copy fixture file");
         }
     }
-    dest
+}
+
+fn write_pack_fixture(temp: &TempDir, include_manifest: bool) -> PathBuf {
+    let pack_dir = temp.path().join("hello2-pack");
+    let fixture = fixture_dir("hello2-pack");
+    copy_fixture_dir(&fixture, &pack_dir);
+
+    if include_manifest {
+        let manifest = serde_json::json!({
+            "id": COMPONENT_ID,
+            "version": COMPONENT_VERSION,
+            "supports": ["messaging"],
+            "world": COMPONENT_WORLD,
+            "profiles": {
+                "default": "stateless",
+                "supported": ["stateless"]
+            },
+            "capabilities": {
+                "wasi": {
+                    "random": false,
+                    "clocks": false
+                },
+                "host": {}
+            },
+            "operations": [
+                {
+                    "name": "handle_message",
+                    "input_schema": {},
+                    "output_schema": {}
+                }
+            ]
+        });
+        let manifest_path = pack_dir
+            .join("components")
+            .join(COMPONENT_ID)
+            .join("component.manifest.json");
+        if let Some(parent) = manifest_path.parent() {
+            fs::create_dir_all(parent).expect("manifest dir");
+        }
+        fs::write(
+            manifest_path,
+            serde_json::to_vec_pretty(&manifest).expect("manifest json"),
+        )
+        .expect("write component manifest");
+    }
+
+    pack_dir
 }
 
 fn cache_component(cache_dir: &Path, digest: &str, include_manifest: bool) {
@@ -46,20 +98,40 @@ fn cache_component(cache_dir: &Path, digest: &str, include_manifest: bool) {
     fs::create_dir_all(&dir).expect("cache dir");
     fs::write(dir.join("component.wasm"), b"cached-component").expect("write wasm");
     if include_manifest {
-        let manifest_path = workspace_root()
-            .join("..")
-            .join("component-templates")
-            .join("component.manifest.json");
-        fs::copy(manifest_path, dir.join("component.manifest.json"))
-            .expect("write component.manifest.json");
+        let manifest = serde_json::json!({
+            "id": COMPONENT_ID,
+            "version": COMPONENT_VERSION,
+            "supports": ["messaging"],
+            "world": COMPONENT_WORLD,
+            "profiles": {
+                "default": "stateless",
+                "supported": ["stateless"]
+            },
+            "capabilities": {
+                "wasi": {
+                    "random": false,
+                    "clocks": false
+                },
+                "host": {}
+            },
+            "operations": [
+                {
+                    "name": "handle_message",
+                    "input_schema": {},
+                    "output_schema": {}
+                }
+            ]
+        });
+        fs::write(
+            dir.join("component.manifest.json"),
+            serde_json::to_vec_pretty(&manifest).expect("manifest json"),
+        )
+        .expect("write component.manifest.json");
     }
 }
 
-fn read_resolve_digest(pack_dir: &Path) -> Option<String> {
+fn read_lock_digest(pack_dir: &Path) -> String {
     let flow_dir = pack_dir.join("flows");
-    if !flow_dir.exists() {
-        return None;
-    }
     for entry in WalkDir::new(&flow_dir).into_iter().filter_map(Result::ok) {
         let path = entry.path();
         if !entry.file_type().is_file()
@@ -76,29 +148,12 @@ fn read_resolve_digest(pack_dir: &Path) -> Option<String> {
         if let Some(nodes) = nodes {
             for node in nodes.values() {
                 if let Some(digest) = node.get("digest").and_then(|val| val.as_str()) {
-                    return Some(digest.to_string());
+                    return digest.to_string();
                 }
             }
         }
     }
-    None
-}
-
-fn read_lock_digest(pack_dir: &Path) -> String {
-    if let Some(digest) = read_resolve_digest(pack_dir) {
-        return digest;
-    }
-    let lock_path = pack_dir.join("pack.lock.json");
-    let data = fs::read(&lock_path).expect("read pack.lock.json");
-    let payload: Value = serde_json::from_slice(&data).expect("parse pack.lock.json");
-    payload
-        .get("components")
-        .and_then(|val| val.as_array())
-        .and_then(|list| list.first())
-        .and_then(|val| val.get("digest"))
-        .and_then(|val| val.as_str())
-        .expect("digest")
-        .to_string()
+    COMPONENT_DIGEST.to_string()
 }
 
 fn build_pack(pack_dir: &Path, cache_dir: &Path, require_manifests: bool) -> std::process::Output {
@@ -129,7 +184,7 @@ fn build_pack(pack_dir: &Path, cache_dir: &Path, require_manifests: bool) -> std
 #[test]
 fn build_materializes_component_manifest_when_available() {
     let temp = TempDir::new().expect("temp dir");
-    let pack_dir = copy_fixture(&temp);
+    let pack_dir = write_pack_fixture(&temp, true);
     let cache_dir = temp.path().join("cache");
     let digest = read_lock_digest(&pack_dir);
     cache_component(&cache_dir, &digest, false);
@@ -178,14 +233,7 @@ fn build_materializes_component_manifest_when_available() {
 #[test]
 fn build_warns_when_manifest_missing() {
     let temp = TempDir::new().expect("temp dir");
-    let pack_dir = copy_fixture(&temp);
-    let manifest_path = pack_dir
-        .join("components")
-        .join("ai.greentic.component-templates")
-        .join("component.manifest.json");
-    if manifest_path.exists() {
-        fs::remove_file(&manifest_path).expect("remove manifest");
-    }
+    let pack_dir = write_pack_fixture(&temp, false);
 
     let cache_dir = temp.path().join("cache");
     let digest = read_lock_digest(&pack_dir);
@@ -229,14 +277,7 @@ fn build_warns_when_manifest_missing() {
 #[test]
 fn build_fails_when_manifest_missing_in_strict_mode() {
     let temp = TempDir::new().expect("temp dir");
-    let pack_dir = copy_fixture(&temp);
-    let manifest_path = pack_dir
-        .join("components")
-        .join("ai.greentic.component-templates")
-        .join("component.manifest.json");
-    if manifest_path.exists() {
-        fs::remove_file(&manifest_path).expect("remove manifest");
-    }
+    let pack_dir = write_pack_fixture(&temp, false);
 
     let cache_dir = temp.path().join("cache");
     let digest = read_lock_digest(&pack_dir);

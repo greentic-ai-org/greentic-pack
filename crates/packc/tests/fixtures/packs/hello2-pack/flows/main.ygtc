@@ -1,0 +1,12 @@
+id: main
+type: messaging
+start: templates
+nodes:
+  templates:
+    component.exec:
+      component: ai.greentic.component-templates
+      operation: handle_message
+      input:
+        text: "hi"
+    routing:
+      - out: true

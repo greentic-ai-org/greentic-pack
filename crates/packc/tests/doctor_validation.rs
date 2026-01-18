@@ -26,6 +26,15 @@ fn fixture_dir(name: &str) -> PathBuf {
         .join(name)
 }
 
+fn validators_fixture_dir() -> PathBuf {
+    workspace_root()
+        .join("crates")
+        .join("packc")
+        .join("tests")
+        .join("fixtures")
+        .join("validators")
+}
+
 #[test]
 fn doctor_json_includes_validation() {
     let pack_dir = fixture_dir("valid-minimal");
@@ -115,6 +124,100 @@ fn doctor_reports_sbom_dangling_path() {
                     .unwrap_or(false)
         }),
         "expected dangling SBOM diagnostic"
+    );
+}
+
+#[test]
+fn doctor_loads_validator_pack_from_root() {
+    let pack_dir = fixture_dir("valid-minimal");
+    let validators_dir = validators_fixture_dir();
+
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
+        .current_dir(workspace_root())
+        .args([
+            "doctor",
+            pack_dir.to_str().unwrap(),
+            "--validators-root",
+            validators_dir.to_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .expect("run doctor");
+    assert!(output.status.success(), "doctor should succeed");
+
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("valid json");
+    let diagnostics = payload
+        .get("validation")
+        .and_then(|val| val.get("diagnostics"))
+        .and_then(|val| val.as_array())
+        .expect("validation diagnostics present");
+    assert!(
+        diagnostics.iter().any(|diag| {
+            diag.get("code")
+                .and_then(|val| val.as_str())
+                .map(|code| code == "PACK_VALIDATOR_NOOP")
+                .unwrap_or(false)
+        }),
+        "expected noop validator diagnostic"
+    );
+}
+
+#[test]
+fn doctor_blocks_unlisted_validator_oci_ref() {
+    let pack_dir = fixture_dir("valid-minimal");
+
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
+        .current_dir(workspace_root())
+        .args([
+            "doctor",
+            pack_dir.to_str().unwrap(),
+            "--validator-pack",
+            "oci://example.com/validators/nope",
+            "--validator-policy",
+            "optional",
+            "--json",
+        ])
+        .output()
+        .expect("run doctor");
+    assert!(output.status.success(), "doctor should succeed");
+
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("valid json");
+    let diagnostics = payload
+        .get("validation")
+        .and_then(|val| val.get("diagnostics"))
+        .and_then(|val| val.as_array())
+        .expect("validation diagnostics present");
+    assert!(
+        diagnostics.iter().any(|diag| {
+            diag.get("code")
+                .and_then(|val| val.as_str())
+                .map(|code| code == "PACK_VALIDATOR_UNAVAILABLE")
+                .unwrap_or(false)
+        }),
+        "expected allowlist warning diagnostic"
+    );
+}
+
+#[test]
+fn doctor_fails_when_required_validator_missing() {
+    let pack_dir = fixture_dir("valid-minimal");
+
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
+        .current_dir(workspace_root())
+        .args([
+            "doctor",
+            pack_dir.to_str().unwrap(),
+            "--validator-pack",
+            "missing-validator.gtpack",
+            "--validator-policy",
+            "required",
+            "--json",
+        ])
+        .output()
+        .expect("run doctor");
+    assert!(
+        !output.status.success(),
+        "doctor should fail when required validator is missing"
     );
 }
 

@@ -53,6 +53,8 @@ tempfile = { workspace = true }
 wit-component = { workspace = true }
 greentic-distributor-client = { workspace = true, default-features = false, features = ["reqwest", "dist-client"] }
 pack_component_template = { workspace = true }
+wasmtime = "40"
+wasmtime-wasi = "40"
 
 [lib]
 name = "packc"
@@ -66,6 +68,4 @@ path = "bin/greentic_pack.rs"
 assert_cmd = "2"
 indoc = "2"
 tempfile = "3"
-wasmtime = "40"
-wasmtime-wasi = "40"
 predicates = "3"
