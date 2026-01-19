@@ -93,6 +93,95 @@ fn write_pack_fixture(temp: &TempDir, include_manifest: bool) -> PathBuf {
     pack_dir
 }
 
+fn write_pack_with_manifest_mismatch(temp: &TempDir) -> PathBuf {
+    let pack_dir = temp.path().join("manifest-mismatch-pack");
+    fs::create_dir_all(&pack_dir).expect("pack dir");
+
+    let components_dir = pack_dir.join("components").join("hello-world");
+    fs::create_dir_all(&components_dir).expect("components dir");
+    let fixture_wasm = fixture_dir("valid-minimal")
+        .join("components")
+        .join("fixture.wasm");
+    fs::copy(&fixture_wasm, components_dir.join("fixture.wasm")).expect("copy wasm");
+
+    let manifest = serde_json::json!({
+        "id": "ai.greentic.hello-world",
+        "version": "0.1.0",
+        "supports": ["messaging"],
+        "world": COMPONENT_WORLD,
+        "profiles": {
+            "default": "stateless",
+            "supported": ["stateless"]
+        },
+        "capabilities": {
+            "wasi": {
+                "random": false,
+                "clocks": false
+            },
+            "host": {}
+        },
+        "operations": [
+            {
+                "name": "handle_message",
+                "input_schema": {},
+                "output_schema": {}
+            }
+        ]
+    });
+    fs::write(
+        components_dir.join("component.manifest.json"),
+        serde_json::to_vec_pretty(&manifest).expect("manifest json"),
+    )
+    .expect("write component manifest");
+
+    fs::create_dir_all(pack_dir.join("flows")).expect("flows dir");
+    fs::write(
+        pack_dir.join("flows/main.ygtc"),
+        "id: main\ntype: messaging\nnodes: {}\n",
+    )
+    .expect("flow file");
+    fs::write(
+        pack_dir.join("flows/main.ygtc.resolve.summary.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schema_version": 1,
+            "flow": "main.ygtc",
+            "nodes": {}
+        }))
+        .expect("summary json"),
+    )
+    .expect("summary file");
+
+    let pack_yaml = r#"pack_id: dev.local.manifest-mismatch
+version: 0.1.0
+kind: application
+publisher: Greentic
+components:
+  - id: hello-world
+    version: 0.1.0
+    world: greentic:component/component@0.5.0
+    supports: [messaging]
+    profiles:
+      default: stateless
+      supported: [stateless]
+    capabilities:
+      wasi:
+        random: false
+        clocks: false
+      host: {}
+    wasm: components/hello-world/fixture.wasm
+flows:
+  - id: main
+    file: flows/main.ygtc
+    tags: [default]
+    entrypoints: [default]
+dependencies: []
+assets: []
+"#;
+    fs::write(pack_dir.join("pack.yaml"), pack_yaml).expect("pack.yaml");
+
+    pack_dir
+}
+
 fn cache_component(cache_dir: &Path, digest: &str, include_manifest: bool) {
     let dir = cache_dir.join(digest.trim_start_matches("sha256:"));
     fs::create_dir_all(&dir).expect("cache dir");
@@ -227,6 +316,43 @@ fn build_materializes_component_manifest_when_available() {
             .by_name("components/ai.greentic.component-templates.wasm")
             .is_ok(),
         "expected aliased component wasm in pack"
+    );
+}
+
+#[test]
+fn build_rejects_component_manifest_id_mismatch() {
+    let temp = TempDir::new().expect("temp dir");
+    let pack_dir = write_pack_with_manifest_mismatch(&temp);
+    let manifest_out = pack_dir.join("dist/manifest.cbor");
+    let gtpack_out = pack_dir.join("dist/pack.gtpack");
+
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
+        .current_dir(workspace_root())
+        .args([
+            "--offline",
+            "build",
+            "--in",
+            pack_dir.to_str().unwrap(),
+            "--manifest",
+            manifest_out.to_str().unwrap(),
+            "--gtpack-out",
+            gtpack_out.to_str().unwrap(),
+            "--no-update",
+        ])
+        .output()
+        .expect("run build");
+
+    assert!(
+        !output.status.success(),
+        "build should fail on manifest id mismatch"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "component manifest id ai.greentic.hello-world does not match pack.yaml id hello-world"
+        ),
+        "expected id mismatch error, stderr:\n{}",
+        stderr
     );
 }
 

@@ -512,18 +512,20 @@ fn load_component_manifest_from_disk(path: &Path) -> Result<Option<ComponentMani
             .map(Path::to_path_buf)
             .ok_or_else(|| anyhow!("component path {} has no parent directory", path.display()))?
     };
-    let manifest_path = manifest_dir.join("component.json");
-    if !manifest_path.exists() {
-        return Ok(None);
+    let candidates = [
+        manifest_dir.join("component.manifest.cbor"),
+        manifest_dir.join("component.manifest.json"),
+        manifest_dir.join("component.json"),
+    ];
+    for manifest_path in candidates {
+        if !manifest_path.exists() {
+            continue;
+        }
+        let manifest = load_component_manifest_from_file(&manifest_path)?;
+        return Ok(Some(manifest));
     }
 
-    let manifest: ComponentManifest = serde_json::from_slice(
-        &fs::read(&manifest_path)
-            .with_context(|| format!("failed to read {}", manifest_path.display()))?,
-    )
-    .with_context(|| format!("{} is not a valid component.json", manifest_path.display()))?;
-
-    Ok(Some(manifest))
+    Ok(None)
 }
 
 fn operation_from_config(cfg: &ComponentOperationConfig) -> Result<ComponentOperation> {

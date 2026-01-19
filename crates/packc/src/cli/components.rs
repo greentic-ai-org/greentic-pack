@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
-use greentic_types::{ComponentCapabilities, ComponentProfiles};
+use greentic_types::{ComponentCapabilities, ComponentManifest, ComponentProfiles};
 use tracing::{info, warn};
 use wit_component::DecodedWasm;
 
@@ -195,6 +195,8 @@ fn discover_components(dir: &Path) -> Result<Vec<DiscoveredComponent>> {
                     .and_then(|n| n.to_str())
                     .ok_or_else(|| anyhow!("invalid component directory name: {}", path.display()))?
                     .to_string();
+                let manifest_id =
+                    load_component_manifest_id(&path)?.unwrap_or_else(|| dir_name.clone());
 
                 let wasm_file_name = wasm_path
                     .strip_prefix(dir)
@@ -207,7 +209,7 @@ fn discover_components(dir: &Path) -> Result<Vec<DiscoveredComponent>> {
                 components.push(DiscoveredComponent {
                     rel_wasm_path: PathBuf::from("components").join(&wasm_file_name),
                     abs_wasm_path: wasm_path,
-                    id_hint: dir_name,
+                    id_hint: manifest_id,
                 });
             }
         }
@@ -239,6 +241,35 @@ fn collect_wasm_files(dir: &Path) -> Result<Vec<PathBuf>> {
     }
 
     Ok(wasm_files)
+}
+
+fn load_component_manifest_id(dir: &Path) -> Result<Option<String>> {
+    let candidates = [
+        dir.join("component.manifest.cbor"),
+        dir.join("component.manifest.json"),
+        dir.join("component.json"),
+    ];
+    for manifest_path in candidates {
+        if !manifest_path.exists() {
+            continue;
+        }
+        let bytes = fs::read(&manifest_path)
+            .with_context(|| format!("failed to read {}", manifest_path.display()))?;
+        let manifest: ComponentManifest = if manifest_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("cbor"))
+        {
+            serde_cbor::from_slice(&bytes)
+                .with_context(|| format!("{} is not valid CBOR", manifest_path.display()))?
+        } else {
+            serde_json::from_slice(&bytes)
+                .with_context(|| format!("{} is not valid JSON", manifest_path.display()))?
+        };
+        return Ok(Some(manifest.id.as_str().to_string()));
+    }
+
+    Ok(None)
 }
 
 fn infer_component_world(path: &Path) -> Option<String> {

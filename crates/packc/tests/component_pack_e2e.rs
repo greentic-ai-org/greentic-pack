@@ -151,7 +151,7 @@ fn end_to_end_component_pack_workflow() {
         serde_yaml_bw::from_str(&std::fs::read_to_string(pack_dir.join("pack.yaml")).unwrap())
             .unwrap();
     assert_eq!(cfg.components.len(), 1);
-    assert_eq!(cfg.components[0].id, "demo-component");
+    assert_eq!(cfg.components[0].id, "dev.local.demo-component");
 
     // Lint and build the pack
     Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
