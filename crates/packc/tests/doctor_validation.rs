@@ -37,11 +37,18 @@ fn validators_fixture_dir() -> PathBuf {
 
 #[test]
 fn doctor_json_includes_validation() {
+    let temp = tempfile::tempdir().expect("temp dir");
     let pack_dir = fixture_dir("valid-minimal");
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
-        .args(["doctor", pack_dir.to_str().unwrap(), "--json"])
+        .args([
+            "doctor",
+            pack_dir.to_str().unwrap(),
+            "--json",
+            "--validators-root",
+            temp.path().to_str().unwrap(),
+        ])
         .output()
         .expect("run doctor");
     assert!(output.status.success(), "doctor should succeed");
