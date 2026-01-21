@@ -76,8 +76,9 @@ and the component manifest (`component.json` converted to CBOR). Source files
 (README, src/, tmp/, etc.) are deliberately excluded from the `.gtpack`.
 
 By default, `packc build` also bundles additional top-level directories like
-`schemas/` or `templates/` into the archive and SBOM. Pass `--no-extra-dirs` to
-keep the archive limited to the standard pack outputs.
+`schemas/` or `templates/` plus files at the pack root into the archive and
+SBOM. Pass `--no-extra-dirs` to keep the archive limited to the standard pack
+outputs.
 
 `packc` writes structured progress logs to stderr. When invoking inside CI, pass
 `--dry-run` to skip Wasm compilation if the target toolchain is unavailable.

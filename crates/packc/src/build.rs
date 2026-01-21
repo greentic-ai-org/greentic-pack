@@ -826,11 +826,21 @@ fn collect_extra_dir_files(pack_root: &Path) -> Result<Vec<ExtraFile>> {
     {
         let entry = entry?;
         let entry_type = entry.file_type()?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if entry_type.is_file() {
+            let logical = name.to_string();
+            if !logical.is_empty() && seen.insert(logical.clone()) {
+                entries.push(ExtraFile {
+                    logical_path: logical,
+                    source: entry.path(),
+                });
+            }
+            continue;
+        }
         if !entry_type.is_dir() {
             continue;
         }
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
         if name.starts_with('.') || excluded.contains(&name.as_ref()) {
             continue;
         }
@@ -1895,6 +1905,7 @@ mod tests {
         fs::create_dir_all(root.join("schemas").join(".nested")).expect("nested hidden dir");
         fs::create_dir_all(root.join(".hidden")).expect("hidden dir");
         fs::create_dir_all(root.join("assets")).expect("assets dir");
+        fs::write(root.join("README.txt"), b"root").expect("root file");
         fs::write(root.join("schemas").join("config.schema.json"), b"{}").expect("schema file");
         fs::write(
             root.join("schemas").join(".nested").join("skip.json"),
@@ -1906,6 +1917,7 @@ mod tests {
 
         let collected = collect_extra_dir_files(root).expect("collect extra dirs");
         let paths: BTreeSet<_> = collected.iter().map(|e| e.logical_path.as_str()).collect();
+        assert!(paths.contains("README.txt"));
         assert!(paths.contains("schemas/config.schema.json"));
         assert!(!paths.contains("schemas/.nested/skip.json"));
         assert!(!paths.contains(".hidden/secret.txt"));

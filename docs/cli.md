@@ -60,7 +60,7 @@ Options:
 - `--secrets-req <FILE>`: JSON file with extra secret requirements.
 - `--default-secret-scope <ENV/TENANT[/TEAM]>`: fill missing secret scopes.
 - `--allow-oci-tags`: allow tag-based OCI refs in extensions.
-- `--no-extra-dirs`: only include `flows/`, `components/`, and `assets/` in the archive.
+- `--no-extra-dirs`: only include `flows/`, `components/`, and `assets/` in the archive (skip extra directories and root files).
 
 Example:
 

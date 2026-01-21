@@ -45,6 +45,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
+      - name: Cache cargo-binstall
+        id: cache-cargo-binstall
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-binstall
+            ~/.cargo/.binstall
+          key: cargo-binstall-${{ runner.os }}-rust-1.88.0
       - name: Install wasm32-wasip2 target
         run: rustup target add wasm32-wasip2
       - name: Prepare temp dir
@@ -52,7 +60,9 @@ jobs:
       - name: Install greentic tooling (for E2E tests)
         run: |
           set -euo pipefail
-          cargo install cargo-binstall --locked || true
+          if [ ! -x "$HOME/.cargo/bin/cargo-binstall" ]; then
+            cargo install cargo-binstall --locked || true
+          fi
           # E2E component_pack workflow depends on greentic-component being available.
           BINSTALL_DISABLE_STRATEGIES=compile cargo binstall greentic-component -y --force
           # wasm-tools is required for mcp composition tests
