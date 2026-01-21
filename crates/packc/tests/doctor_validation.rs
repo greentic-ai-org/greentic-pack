@@ -6,6 +6,7 @@ use std::process::Command;
 
 use greentic_types::{PackManifest, encode_pack_manifest};
 use serde_json::Value;
+use walkdir::WalkDir;
 use zip::CompressionMethod;
 use zip::ZipWriter;
 use zip::write::FileOptions;
@@ -35,10 +36,33 @@ fn validators_fixture_dir() -> PathBuf {
         .join("validators")
 }
 
+fn copy_fixture_to_temp(name: &str) -> (tempfile::TempDir, PathBuf) {
+    let src = fixture_dir(name);
+    let temp = tempfile::tempdir().expect("temp dir");
+    let dest = temp.path().join(name);
+    fs::create_dir_all(&dest).expect("create fixture root");
+    for entry in WalkDir::new(&src).into_iter().filter_map(Result::ok) {
+        let rel = entry.path().strip_prefix(&src).expect("relative path");
+        if rel.as_os_str().is_empty() {
+            continue;
+        }
+        let target = dest.join(rel);
+        if entry.file_type().is_dir() {
+            fs::create_dir_all(&target).expect("create fixture dir");
+        } else {
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).expect("create fixture parent");
+            }
+            fs::copy(entry.path(), &target).expect("copy fixture file");
+        }
+    }
+    (temp, dest)
+}
+
 #[test]
 fn doctor_json_includes_validation() {
     let temp = tempfile::tempdir().expect("temp dir");
-    let pack_dir = fixture_dir("valid-minimal");
+    let (_pack_temp, pack_dir) = copy_fixture_to_temp("valid-minimal");
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
@@ -62,7 +86,7 @@ fn doctor_json_includes_validation() {
 
 #[test]
 fn doctor_fails_on_missing_provider_schema() {
-    let pack_dir = fixture_dir("missing-provider-schema");
+    let (_pack_temp, pack_dir) = copy_fixture_to_temp("missing-provider-schema");
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
@@ -136,7 +160,7 @@ fn doctor_reports_sbom_dangling_path() {
 
 #[test]
 fn doctor_loads_validator_pack_from_root() {
-    let pack_dir = fixture_dir("valid-minimal");
+    let (_pack_temp, pack_dir) = copy_fixture_to_temp("valid-minimal");
     let validators_dir = validators_fixture_dir();
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
@@ -171,7 +195,7 @@ fn doctor_loads_validator_pack_from_root() {
 
 #[test]
 fn doctor_blocks_unlisted_validator_oci_ref() {
-    let pack_dir = fixture_dir("valid-minimal");
+    let (_pack_temp, pack_dir) = copy_fixture_to_temp("valid-minimal");
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
@@ -207,7 +231,7 @@ fn doctor_blocks_unlisted_validator_oci_ref() {
 
 #[test]
 fn doctor_fails_when_required_validator_missing() {
-    let pack_dir = fixture_dir("valid-minimal");
+    let (_pack_temp, pack_dir) = copy_fixture_to_temp("valid-minimal");
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
