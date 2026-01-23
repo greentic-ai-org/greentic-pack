@@ -292,7 +292,14 @@ fn build_materializes_component_manifest_when_available() {
 
     let doctor = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(&pack_dir)
-        .args(["doctor", "--pack", "dist/pack.gtpack", "--json"])
+        .args([
+            "doctor",
+            "--pack",
+            "dist/pack.gtpack",
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
         .output()
         .expect("run doctor");
     assert!(doctor.status.success(), "doctor failed");
@@ -379,7 +386,14 @@ fn build_warns_when_manifest_missing() {
 
     let doctor = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(&pack_dir)
-        .args(["doctor", "--pack", "dist/pack.gtpack", "--json"])
+        .args([
+            "doctor",
+            "--pack",
+            "dist/pack.gtpack",
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
         .output()
         .expect("run doctor");
     assert!(doctor.status.success(), "doctor failed");

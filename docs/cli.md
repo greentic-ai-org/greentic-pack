@@ -127,6 +127,8 @@ Options:
 - `--archive`: treat `PATH` as archive.
 - `--source`: treat `PATH` as source.
 - `--allow-oci-tags`: allow tag-based OCI refs in extensions.
+- `--no-flow-doctor`: disable per-flow doctor checks.
+- `--no-component-doctor`: disable per-component doctor checks.
 
 Example:
 

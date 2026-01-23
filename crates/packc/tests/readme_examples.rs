@@ -65,6 +65,8 @@ fn readme_demo_build_and_doctor() {
         "doctor",
         gtpack_out.to_str().unwrap(),
         "--json",
+        "--no-flow-doctor",
+        "--no-component-doctor",
     ]);
     doctor_cmd.assert().success();
 }

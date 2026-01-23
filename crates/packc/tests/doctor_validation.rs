@@ -72,6 +72,8 @@ fn doctor_json_includes_validation() {
             "--json",
             "--validators-root",
             temp.path().to_str().unwrap(),
+            "--no-flow-doctor",
+            "--no-component-doctor",
         ])
         .output()
         .expect("run doctor");
@@ -90,7 +92,13 @@ fn doctor_fails_on_missing_provider_schema() {
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
-        .args(["doctor", pack_dir.to_str().unwrap(), "--json"])
+        .args([
+            "doctor",
+            pack_dir.to_str().unwrap(),
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
         .output()
         .expect("run doctor");
     assert!(
@@ -128,7 +136,14 @@ fn doctor_reports_sbom_dangling_path() {
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
-        .args(["doctor", "--pack", pack_path.to_str().unwrap(), "--json"])
+        .args([
+            "doctor",
+            "--pack",
+            pack_path.to_str().unwrap(),
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
         .output()
         .expect("run doctor");
     assert!(
@@ -171,6 +186,8 @@ fn doctor_loads_validator_pack_from_root() {
             "--validators-root",
             validators_dir.to_str().unwrap(),
             "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
         ])
         .output()
         .expect("run doctor");
@@ -207,6 +224,8 @@ fn doctor_blocks_unlisted_validator_oci_ref() {
             "--validator-policy",
             "optional",
             "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
         ])
         .output()
         .expect("run doctor");
@@ -243,6 +262,8 @@ fn doctor_fails_when_required_validator_missing() {
             "--validator-policy",
             "required",
             "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
         ])
         .output()
         .expect("run doctor");

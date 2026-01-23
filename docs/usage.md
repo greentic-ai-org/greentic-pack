@@ -105,6 +105,10 @@ adapters, component count, warnings). Pass `--json` to emit the manifest,
 verification report, and SBOM as JSON. Signature verification uses the dev
 policy when inspecting archives.
 
+By default, `doctor` also runs `greentic-flow doctor` on each flow and
+`greentic-component doctor` on each component when the binaries are available.
+Disable these with `--no-flow-doctor` or `--no-component-doctor`.
+
 ### Flow resolve sidecars and pack.lock
 
 Authoring flows may be accompanied by optional `*.ygtc.resolve.json` sidecars

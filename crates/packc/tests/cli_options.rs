@@ -189,6 +189,8 @@ fn greentic_pack_inspect_alias_warns_and_runs() {
             "inspect",
             "--pack",
             gtpack_out.to_str().unwrap(),
+            "--no-flow-doctor",
+            "--no-component-doctor",
             "--log",
             "warn",
         ])

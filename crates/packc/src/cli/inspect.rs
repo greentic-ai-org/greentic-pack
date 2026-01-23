@@ -1,8 +1,10 @@
 #![forbid(unsafe_code)]
 
+use std::io::Write;
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
+    process::{Command, Stdio},
 };
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -55,6 +57,14 @@ pub struct InspectArgs {
     #[arg(long = "allow-oci-tags", default_value_t = false)]
     pub allow_oci_tags: bool,
 
+    /// Disable per-flow doctor checks
+    #[arg(long = "no-flow-doctor", default_value_t = true, action = clap::ArgAction::SetFalse)]
+    pub flow_doctor: bool,
+
+    /// Disable per-component doctor checks
+    #[arg(long = "no-component-doctor", default_value_t = true, action = clap::ArgAction::SetFalse)]
+    pub component_doctor: bool,
+
     /// Output format
     #[arg(long, value_enum, default_value = "human")]
     pub format: InspectFormat,
@@ -104,7 +114,18 @@ pub async fn handle(args: InspectArgs, json: bool, runtime: &RuntimeContext) -> 
         }
     };
     let validation = if validate_enabled {
-        Some(run_pack_validation(&load, &args, runtime).await?)
+        let mut output = run_pack_validation(&load, &args, runtime).await?;
+        let mut doctor_diagnostics = Vec::new();
+        let mut doctor_errors = false;
+        if args.flow_doctor {
+            doctor_errors |= run_flow_doctors(&load, &mut doctor_diagnostics)?;
+        }
+        if args.component_doctor {
+            doctor_errors |= run_component_doctors(&load, &mut doctor_diagnostics)?;
+        }
+        output.report.diagnostics.extend(doctor_diagnostics);
+        output.has_errors |= doctor_errors;
+        Some(output)
     } else {
         None
     };
@@ -140,6 +161,218 @@ pub async fn handle(args: InspectArgs, json: bool, runtime: &RuntimeContext) -> 
     }
 
     Ok(())
+}
+
+fn run_flow_doctors(load: &PackLoad, diagnostics: &mut Vec<Diagnostic>) -> Result<bool> {
+    if load.manifest.flows.is_empty() {
+        return Ok(false);
+    }
+
+    let mut has_errors = false;
+
+    for flow in &load.manifest.flows {
+        let Some(bytes) = load.files.get(&flow.file_yaml) else {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "PACK_FLOW_DOCTOR_MISSING_FLOW".to_string(),
+                message: "flow file missing from pack".to_string(),
+                path: Some(flow.file_yaml.clone()),
+                hint: Some("rebuild the pack to include flow sources".to_string()),
+                data: Value::Null,
+            });
+            has_errors = true;
+            continue;
+        };
+
+        let mut command = Command::new("greentic-flow");
+        command
+            .args(["doctor", "--json", "--stdin"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warn,
+                    code: "PACK_FLOW_DOCTOR_UNAVAILABLE".to_string(),
+                    message: "greentic-flow not available; skipping flow doctor checks".to_string(),
+                    path: None,
+                    hint: Some("install greentic-flow or pass --no-flow-doctor".to_string()),
+                    data: Value::Null,
+                });
+                return Ok(false);
+            }
+            Err(err) => return Err(err).context("run greentic-flow doctor"),
+        };
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(bytes)
+                .context("write flow content to greentic-flow stdin")?;
+        }
+        let output = child
+            .wait_with_output()
+            .context("wait for greentic-flow doctor")?;
+
+        if !output.status.success() {
+            if flow_doctor_unsupported(&output) {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warn,
+                    code: "PACK_FLOW_DOCTOR_UNAVAILABLE".to_string(),
+                    message: "greentic-flow does not support --stdin; skipping flow doctor checks"
+                        .to_string(),
+                    path: None,
+                    hint: Some("upgrade greentic-flow or pass --no-flow-doctor".to_string()),
+                    data: json_diagnostic_data(&output),
+                });
+                return Ok(false);
+            }
+            has_errors = true;
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "PACK_FLOW_DOCTOR_FAILED".to_string(),
+                message: "flow doctor failed".to_string(),
+                path: Some(flow.file_yaml.clone()),
+                hint: Some("run `greentic-flow doctor` for details".to_string()),
+                data: json_diagnostic_data(&output),
+            });
+        }
+    }
+
+    Ok(has_errors)
+}
+
+fn flow_doctor_unsupported(output: &std::process::Output) -> bool {
+    let mut combined = String::new();
+    combined.push_str(&String::from_utf8_lossy(&output.stdout));
+    combined.push_str(&String::from_utf8_lossy(&output.stderr));
+    let combined = combined.to_lowercase();
+    combined.contains("--stdin") && combined.contains("unknown")
+        || combined.contains("found argument '--stdin'")
+        || combined.contains("unexpected argument '--stdin'")
+        || combined.contains("unrecognized option '--stdin'")
+}
+
+fn run_component_doctors(load: &PackLoad, diagnostics: &mut Vec<Diagnostic>) -> Result<bool> {
+    if load.manifest.components.is_empty() {
+        return Ok(false);
+    }
+
+    let temp = TempDir::new().context("allocate temp dir for component doctor")?;
+    let mut has_errors = false;
+
+    let mut manifests = std::collections::HashMap::new();
+    if let Some(gpack_manifest) = load.gpack_manifest.as_ref() {
+        for component in &gpack_manifest.components {
+            if let Ok(bytes) = serde_json::to_vec_pretty(component) {
+                manifests.insert(component.id.to_string(), bytes);
+            }
+        }
+    }
+
+    for component in &load.manifest.components {
+        let Some(wasm_bytes) = load.files.get(&component.file_wasm) else {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warn,
+                code: "PACK_COMPONENT_DOCTOR_MISSING_WASM".to_string(),
+                message: "component wasm missing from pack; skipping component doctor".to_string(),
+                path: Some(component.file_wasm.clone()),
+                hint: Some("rebuild with --bundle=cache or supply cached artifacts".to_string()),
+                data: Value::Null,
+            });
+            continue;
+        };
+
+        let manifest_bytes = if let Some(bytes) = manifests.get(&component.name) {
+            Some(bytes.clone())
+        } else if let Some(path) = component.manifest_file.as_deref()
+            && let Some(bytes) = load.files.get(path)
+        {
+            Some(bytes.clone())
+        } else {
+            None
+        };
+
+        let Some(manifest_bytes) = manifest_bytes else {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warn,
+                code: "PACK_COMPONENT_DOCTOR_MISSING_MANIFEST".to_string(),
+                message: "component manifest missing; skipping component doctor".to_string(),
+                path: component.manifest_file.clone(),
+                hint: Some("rebuild the pack to include component manifests".to_string()),
+                data: Value::Null,
+            });
+            continue;
+        };
+
+        let component_dir = temp.path().join(sanitize_component_id(&component.name));
+        fs::create_dir_all(&component_dir)
+            .with_context(|| format!("create temp dir for {}", component.name))?;
+        let wasm_path = component_dir.join("component.wasm");
+        let manifest_path = component_dir.join("component.manifest.json");
+        fs::write(&wasm_path, wasm_bytes)?;
+        fs::write(&manifest_path, manifest_bytes)?;
+
+        let output = match Command::new("greentic-component")
+            .args(["doctor"])
+            .arg(&wasm_path)
+            .args(["--manifest"])
+            .arg(&manifest_path)
+            .output()
+        {
+            Ok(output) => output,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warn,
+                    code: "PACK_COMPONENT_DOCTOR_UNAVAILABLE".to_string(),
+                    message: "greentic-component not available; skipping component doctor checks"
+                        .to_string(),
+                    path: None,
+                    hint: Some(
+                        "install greentic-component or pass --no-component-doctor".to_string(),
+                    ),
+                    data: Value::Null,
+                });
+                return Ok(false);
+            }
+            Err(err) => return Err(err).context("run greentic-component doctor"),
+        };
+
+        if !output.status.success() {
+            has_errors = true;
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "PACK_COMPONENT_DOCTOR_FAILED".to_string(),
+                message: "component doctor failed".to_string(),
+                path: Some(component.name.clone()),
+                hint: Some("run `greentic-component doctor` for details".to_string()),
+                data: json_diagnostic_data(&output),
+            });
+        }
+    }
+
+    Ok(has_errors)
+}
+
+fn json_diagnostic_data(output: &std::process::Output) -> Value {
+    serde_json::json!({
+        "status": output.status.code(),
+        "stdout": String::from_utf8_lossy(&output.stdout).trim_end(),
+        "stderr": String::from_utf8_lossy(&output.stderr).trim_end(),
+    })
+}
+
+fn sanitize_component_id(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn inspect_pack_file(path: &Path) -> Result<PackLoad> {
@@ -425,8 +658,38 @@ fn print_validation(report: &ValidationOutput) {
         } else {
             println!("  - [{sev}] {} - {}", diag.code, diag.message);
         }
+        if matches!(
+            diag.code.as_str(),
+            "PACK_FLOW_DOCTOR_FAILED" | "PACK_COMPONENT_DOCTOR_FAILED"
+        ) {
+            print_doctor_failure_details(&diag.data);
+        }
         if let Some(hint) = diag.hint.as_deref() {
             println!("    hint: {hint}");
+        }
+    }
+}
+
+fn print_doctor_failure_details(data: &Value) {
+    let Some(obj) = data.as_object() else {
+        return;
+    };
+    let stdout = obj.get("stdout").and_then(|value| value.as_str());
+    let stderr = obj.get("stderr").and_then(|value| value.as_str());
+    let status = obj.get("status").and_then(|value| value.as_i64());
+    if let Some(status) = status {
+        println!("    status: {status}");
+    }
+    if let Some(stderr) = stderr {
+        let trimmed = stderr.trim();
+        if !trimmed.is_empty() {
+            println!("    stderr: {trimmed}");
+        }
+    }
+    if let Some(stdout) = stdout {
+        let trimmed = stdout.trim();
+        if !trimmed.is_empty() {
+            println!("    stdout: {trimmed}");
         }
     }
 }

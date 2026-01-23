@@ -157,7 +157,7 @@ builder_demo_check() (
   fi
 
   local report
-  report=$(cargo run -p greentic-pack --bin greentic-pack -- --json doctor "$out1")
+  report=$(cargo run -p greentic-pack --bin greentic-pack -- --json doctor "$out1" --no-flow-doctor --no-component-doctor)
   echo "$report" | jq -e 'has("sbom") and (all(.sbom[]; (.media_type | length > 0)))' >/dev/null
 )
 
@@ -203,7 +203,7 @@ greentic_pack_gtpack_check() {
   fi
 
   local report
-  report=$(cargo run -p greentic-pack --bin greentic-pack -- --json doctor "$pack_dir/$out_gtpack")
+  report=$(cargo run -p greentic-pack --bin greentic-pack -- --json doctor "$pack_dir/$out_gtpack" --no-flow-doctor --no-component-doctor)
   echo "$report" | jq -e 'has("sbom") and (all(.sbom[]; (.media_type | length > 0)))' >/dev/null
 }
 

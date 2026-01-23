@@ -22,7 +22,14 @@ fn inspect_reports_messaging_adapter() {
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
-        .args(["inspect", "--pack", pack_path.to_str().unwrap(), "--json"])
+        .args([
+            "inspect",
+            "--pack",
+            pack_path.to_str().unwrap(),
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
         .assert()
         .success()
         .get_output()
@@ -57,7 +64,14 @@ fn inspect_json_reports_messaging_section() {
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
-        .args(["inspect", "--pack", pack_path.to_str().unwrap(), "--json"])
+        .args([
+            "inspect",
+            "--pack",
+            pack_path.to_str().unwrap(),
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
         .assert()
         .success()
         .get_output()
@@ -103,13 +117,25 @@ fn inspect_accepts_positional_path() {
 
     Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
-        .args(["inspect", pack_path.to_str().unwrap(), "--json"])
+        .args([
+            "inspect",
+            pack_path.to_str().unwrap(),
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
         .assert()
         .success();
 
     Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
-        .args(["doctor", pack_path.to_str().unwrap(), "--json"])
+        .args([
+            "doctor",
+            pack_path.to_str().unwrap(),
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
         .assert()
         .success();
 
@@ -122,7 +148,14 @@ fn doctor_warns_on_unsupported_manifest() {
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
-        .args(["doctor", "--pack", pack_path.to_str().unwrap(), "--json"])
+        .args([
+            "doctor",
+            "--pack",
+            pack_path.to_str().unwrap(),
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
         .output()
         .expect("run doctor");
     assert!(output.status.success(), "doctor should succeed");

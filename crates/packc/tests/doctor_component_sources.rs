@@ -135,7 +135,14 @@ fn doctor_accepts_remote_component_sources() {
 
     let doctor = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
-        .args(["doctor", "--pack", gtpack_out.to_str().unwrap(), "--json"])
+        .args([
+            "doctor",
+            "--pack",
+            gtpack_out.to_str().unwrap(),
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
         .output()
         .expect("run doctor");
     assert!(
@@ -180,7 +187,14 @@ fn doctor_rejects_missing_component_sources() {
 
     let doctor = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
         .current_dir(workspace_root())
-        .args(["doctor", "--pack", broken.to_str().unwrap(), "--json"])
+        .args([
+            "doctor",
+            "--pack",
+            broken.to_str().unwrap(),
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
         .output()
         .expect("run doctor");
     assert!(

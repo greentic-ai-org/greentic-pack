@@ -16,8 +16,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust 1.88
-        uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install Rust 1.90
+        uses: dtolnay/rust-toolchain@1.90.0
         with:
           components: rustfmt, clippy
 
@@ -28,7 +28,7 @@ jobs:
           path: |
             ~/.cargo/bin/cargo-binstall
             ~/.cargo/.binstall
-          key: cargo-binstall-${{ runner.os }}-rust-1.88.0
+          key: cargo-binstall-${{ runner.os }}-rust-1.90.0
 
       - name: Install cargo-binstall
         if: steps.cache-cargo-binstall.outputs.cache-hit != 'true'
