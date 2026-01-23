@@ -35,16 +35,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_TARGET_DIR: target/ci
-      RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.90.0
         with:
           components: clippy
-      - name: Install mold linker
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mold
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-rust-1.90-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
@@ -56,17 +51,40 @@ jobs:
     env:
       CARGO_TARGET_DIR: target/ci
       TMPDIR: /tmp/greentic-pack-tmp
-      RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.90.0
-      - name: Install mold linker
+      - name: Install mold + clang (Linux only)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y mold
+          sudo apt-get install -y mold clang
+      - name: Configure mold for native Linux builds
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
+          [target.x86_64-unknown-linux-gnu]
+          linker = "clang"
+          rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+          EOF
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-rust-1.90-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install mold + clang (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mold clang
+      - name: Configure mold for native Linux builds
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
+          [target.x86_64-unknown-linux-gnu]
+          linker = "clang"
+          rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+          EOF
       - name: Cache cargo-binstall
         id: cache-cargo-binstall
         uses: actions/cache@v4
@@ -106,6 +124,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.90.0
+      - name: Install mold + clang (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mold clang
+      - name: Configure mold for native Linux builds
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
+          [target.x86_64-unknown-linux-gnu]
+          linker = "clang"
+          rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+          EOF
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-rust-1.90-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
@@ -152,11 +184,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: release-${{ runner.os }}-${{ matrix.target }}-rust-1.90-${{ hashFiles('**/Cargo.lock') }}
-      - name: Install mold linker (Linux only)
+      - name: Install mold + clang (Linux only)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y mold
+          sudo apt-get install -y mold clang
+      - name: Configure mold for native Linux builds
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
+          [target.x86_64-unknown-linux-gnu]
+          linker = "clang"
+          rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+          EOF
       - name: Derive release tag and title from workspace version
         run: |
           set -euo pipefail
@@ -167,9 +208,6 @@ jobs:
       - name: Build binstall artifacts
         run: |
           set -euo pipefail
-          if [[ "${{ matrix.target }}" == *linux* ]]; then
-            export RUSTFLAGS="-C link-arg=-fuse-ld=mold"
-          fi
           cargo build --release --target ${{ matrix.target }} --package greentic-pack --bin greentic-pack
           out_dir="target/${{ matrix.target }}/release"
           mkdir -p dist
