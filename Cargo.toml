@@ -15,7 +15,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 rust-version = "1.90"
-version = "0.4.69"
+version = "0.4.70"
 license = "MIT"
 
 [workspace.dependencies]
@@ -58,3 +58,9 @@ regex = "1"
 wit-component = "0.244"
 greentic-distributor-client = { version = "0.4", default-features = false, features = ["reqwest", "dist-client"] }
 schemars = "1"
+wasmtime = "40"
+wasmtime-wasi = "40"
+assert_cmd = "2"
+indoc = "2"
+predicates = "3"
+wit-bindgen = { version = "0.51", default-features = false, features = ["macros", "realloc"] }

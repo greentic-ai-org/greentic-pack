@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "name": "main___hello",
+      "ref": "file:///projects/ai/greentic-ng/greentic-pack/crates/packc/tests/fixtures/packs/valid-minimal/flows/../components/fixture.wasm",
+      "digest": "sha256:93a44bbb96c751218e4c00d479e4c14358122a389acca16205b1e4d0dc5f9476",
+      "component_id": "dev.local.component"
+    }
+  ]
+}

@@ -8,6 +8,6 @@ license = "MIT"
 crate-type = ["cdylib"]
 
 [dependencies]
-wit-bindgen = "0.51"
+wit-bindgen = { workspace = true }
 
 [workspace]

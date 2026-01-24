@@ -24,10 +24,11 @@ fn build_writes_all_outputs_offline_with_cache_dir() {
 
     let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"));
     cmd.current_dir(workspace_root());
+    let pack_dir = workspace_root().join("crates/packc/tests/fixtures/packs/valid-minimal");
     cmd.args([
         "build",
         "--in",
-        "examples/weather-demo",
+        pack_dir.to_str().unwrap(),
         "--out",
         out_wasm.to_str().unwrap(),
         "--manifest",

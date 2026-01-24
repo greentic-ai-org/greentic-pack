@@ -1330,6 +1330,13 @@ async fn collect_lock_component_artifacts(
                 }
             }
             let Some((item, path)) = resolved else {
+                if runtime.network_policy() == NetworkPolicy::Offline {
+                    anyhow::bail!(
+                        "component {} requires network access ({}) but cache is missing; offline builds cannot download artifacts",
+                        comp.name,
+                        comp.r#ref
+                    );
+                }
                 eprintln!(
                     "warning: component {} is not cached; skipping embed",
                     comp.name
@@ -1861,13 +1868,16 @@ fn write_secret_requirements_file(
 mod tests {
     use super::*;
     use crate::config::BootstrapConfig;
+    use crate::runtime::resolve_runtime;
     use greentic_pack::pack_lock::{LockedComponent, PackLockV1};
+    use greentic_types::ComponentId;
     use greentic_types::flow::FlowKind;
     use serde_json::json;
     use sha2::{Digest, Sha256};
     use std::collections::BTreeSet;
     use std::fs::File;
     use std::io::Read;
+    use std::path::Path;
     use std::{fs, path::PathBuf};
     use tempfile::tempdir;
     use zip::ZipArchive;
@@ -2590,5 +2600,43 @@ flows:
             bootstrap: None,
             extensions: None,
         }
+    }
+
+    #[tokio::test]
+    async fn offline_build_requires_cached_remote_component() {
+        let temp = tempdir().expect("temp dir");
+        let cache_dir = temp.path().join("cache");
+        fs::create_dir_all(&cache_dir).expect("create cache dir");
+        let project_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root");
+        let runtime = resolve_runtime(Some(project_root), Some(cache_dir.as_path()), true, None)
+            .expect("resolve runtime");
+
+        let mut lock = PackLockV1::new(vec![LockedComponent {
+            name: "remote".to_string(),
+            r#ref: "oci://example/remote@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            digest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
+            component_id: Some(ComponentId::new("remote.component").expect("valid component id")),
+            bundled: false,
+            bundled_path: None,
+            wasm_sha256: None,
+            resolved_digest: None,
+        }]);
+
+        let err =
+            match collect_lock_component_artifacts(&mut lock, &runtime, BundleMode::Cache, false)
+                .await
+            {
+                Ok(_) => panic!("expected offline build to fail without cached component"),
+                Err(err) => err,
+            };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("requires network access"),
+            "error message should describe missing network access, got {}",
+            msg
+        );
     }
 }

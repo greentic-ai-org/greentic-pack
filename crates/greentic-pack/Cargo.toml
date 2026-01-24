@@ -38,6 +38,6 @@ serde_yaml_bw = { workspace = true }
 sha2 = { workspace = true }
 
 [dev-dependencies]
-assert_cmd = "2"
+assert_cmd = { workspace = true }
 zip = { workspace = true }
 serde_json = { workspace = true }
