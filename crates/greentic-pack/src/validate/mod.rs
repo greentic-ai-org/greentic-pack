@@ -9,6 +9,7 @@ use greentic_types::pack::extensions::component_sources::{
     ComponentSourcesV1, EXT_COMPONENT_SOURCES_V1,
 };
 use greentic_types::pack_manifest::{ExtensionInline, PackManifest};
+const EXT_BUILD_MODE_ID: &str = "greentic.pack-mode.v1";
 use greentic_types::provider::ProviderDecl;
 use greentic_types::validate::{
     Diagnostic, PackValidator, Severity, ValidationReport, validate_pack_manifest_core,
@@ -23,10 +24,12 @@ pub struct ValidateCtx {
     pub sbom_paths: BTreeSet<String>,
     pub referenced_paths: BTreeSet<String>,
     pub pack_root: Option<PathBuf>,
+    pub prod_build: bool,
 }
 
 impl ValidateCtx {
     pub fn from_pack_load(load: &PackLoad) -> Self {
+        let prod_build = is_production_pack(load);
         let pack_paths = load.files.keys().cloned().collect();
         let sbom_paths = load.sbom.iter().map(|entry| entry.path.clone()).collect();
 
@@ -66,6 +69,7 @@ impl ValidateCtx {
             sbom_paths,
             referenced_paths,
             pack_root: None,
+            prod_build,
         }
     }
 }
@@ -118,6 +122,9 @@ impl PackValidator for ReferencedFilesExistValidator {
         let mut diagnostics = Vec::new();
 
         for path in &self.ctx.referenced_paths {
+            if self.ctx.prod_build && is_flow_source_path(path) {
+                continue;
+            }
             let missing_in_pack = !self.ctx.pack_paths.contains(path);
             let missing_in_sbom = !self.ctx.sbom_paths.contains(path);
 
@@ -217,10 +224,6 @@ impl PackValidator for ProviderReferencesExistValidator {
 
     fn applies(&self, manifest: &PackManifest) -> bool {
         manifest.provider_extension_inline().is_some()
-            || self
-                .ctx
-                .pack_paths
-                .contains("assets/secret-requirements.json")
     }
 
     fn validate(&self, manifest: &PackManifest) -> Vec<Diagnostic> {
@@ -242,17 +245,67 @@ impl PackValidator for ProviderReferencesExistValidator {
             }
         }
 
-        let secret_requirements_path = "assets/secret-requirements.json";
-        if self.ctx.pack_paths.contains(secret_requirements_path)
-            && !self.ctx.sbom_paths.contains(secret_requirements_path)
-        {
-            diagnostics.push(missing_file_diagnostic(
-                "PACK_MISSING_FILE",
-                "Secret requirements asset is missing from the SBOM.",
-                Some(secret_requirements_path.to_string()),
-            ));
-        }
+        diagnostics
+    }
+}
 
+#[derive(Clone, Debug)]
+pub struct SecretRequirementsValidator;
+
+impl PackValidator for SecretRequirementsValidator {
+    fn id(&self) -> &'static str {
+        "pack.secret-requirements-invalid"
+    }
+
+    fn applies(&self, manifest: &PackManifest) -> bool {
+        !manifest.secret_requirements.is_empty()
+    }
+
+    fn validate(&self, manifest: &PackManifest) -> Vec<Diagnostic> {
+        let mut diagnostics = Vec::new();
+        for (idx, requirement) in manifest.secret_requirements.iter().enumerate() {
+            let key = requirement.key.as_str();
+            if requirement.scope.is_none() {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "PACK_SECRET_REQUIREMENTS_INVALID".to_string(),
+                    message: format!("secret requirement `{}` is missing a scope", key),
+                    path: Some(format!("secretRequirements[{idx}]")),
+                    hint: Some(
+                        "Provide env/tenant values in secretRequirements or pass --default-secret-scope when building."
+                            .to_string(),
+                    ),
+                    data: Value::Null,
+                });
+                continue;
+            }
+            let scope = requirement.scope.as_ref().unwrap();
+            if scope.env.trim().is_empty() {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "PACK_SECRET_REQUIREMENTS_INVALID".to_string(),
+                    message: format!("secret requirement `{}` has an empty env scope", key),
+                    path: Some(format!("secretRequirements[{idx}].scope.env")),
+                    hint: Some(
+                        "Ensure the secret scope includes a valid environment identifier."
+                            .to_string(),
+                    ),
+                    data: Value::Null,
+                });
+            }
+            if scope.tenant.trim().is_empty() {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "PACK_SECRET_REQUIREMENTS_INVALID".to_string(),
+                    message: format!("secret requirement `{}` has an empty tenant scope", key),
+                    path: Some(format!("secretRequirements[{idx}].scope.tenant")),
+                    hint: Some(
+                        "Ensure the secret scope includes a valid tenant identifier.".to_string(),
+                    ),
+                    data: Value::Null,
+                });
+            }
+        }
         diagnostics
     }
 }
@@ -358,6 +411,24 @@ fn check_pack_path(ctx: &ValidateCtx, path: &str, label: &str) -> Vec<Diagnostic
     }
 
     diagnostics
+}
+
+fn is_flow_source_path(path: &str) -> bool {
+    path.starts_with("flows/") && (path.ends_with(".ygtc") || path.ends_with(".json"))
+}
+
+fn is_production_pack(load: &PackLoad) -> bool {
+    if let Some(manifest) = load.gpack_manifest.as_ref()
+        && let Some(extension) = manifest
+            .extensions
+            .as_ref()
+            .and_then(|map| map.get(EXT_BUILD_MODE_ID))
+        && let Some(ExtensionInline::Other(value)) = extension.inline.as_ref()
+        && let Some(mode) = value.get("mode").and_then(|value| value.as_str())
+    {
+        return !mode.eq_ignore_ascii_case("dev");
+    }
+    !load.files.keys().any(|path| path.ends_with(".ygtc"))
 }
 
 fn missing_file_diagnostic(code: &str, message: &str, path: Option<String>) -> Diagnostic {

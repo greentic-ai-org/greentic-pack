@@ -30,7 +30,7 @@ impl From<PolicyArg> for SigningPolicy {
 pub fn run(path: &Path, policy: PolicyArg, json: bool, verify_manifest_files: bool) -> Result<()> {
     let load = open_pack(path, policy.into()).map_err(|err| anyhow!(err.message))?;
     let gui = load_gui_summary(path).ok();
-    let secrets = load_secret_requirements(path).ok();
+    let secrets = load_secret_requirements(&load).ok();
     let index_state = load.component_manifest_index_v1();
     let manifest_verify = if verify_manifest_files {
         Some(load.verify_component_manifest_files())
@@ -359,27 +359,21 @@ struct GuiAssetsSummary {
     total_bytes: u64,
 }
 
-fn load_secret_requirements(path: &Path) -> Result<Vec<SecretRequirement>> {
-    let file =
-        std::fs::File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
-    let mut archive = ZipArchive::new(file)
-        .with_context(|| format!("{} is not a valid gtpack archive", path.display()))?;
+fn load_secret_requirements(load: &PackLoad) -> Result<Vec<SecretRequirement>> {
+    if let Some(manifest) = load.gpack_manifest.as_ref() {
+        if !manifest.secret_requirements.is_empty() {
+            return Ok(manifest.secret_requirements.clone());
+        }
+    }
 
-    let candidate_names = [
-        "assets/secret-requirements.json",
-        "secret-requirements.json",
-    ];
-    for name in candidate_names {
-        if let Ok(mut entry) = archive.by_name(name) {
-            let mut buf = String::new();
-            entry
-                .read_to_string(&mut buf)
-                .context("failed to read secret requirements file")?;
-            let reqs: Vec<SecretRequirement> =
-                serde_json::from_str(&buf).context("secret requirements file is invalid JSON")?;
+    for name in ["assets/secret-requirements.json", "secret-requirements.json"] {
+        if let Some(bytes) = load.files.get(name) {
+            let reqs: Vec<SecretRequirement> = serde_json::from_slice(bytes)
+                .context("secret requirements file is invalid JSON")?;
             return Ok(reqs);
         }
     }
+
     Err(anyhow!("secret requirements file not found in archive"))
 }
 

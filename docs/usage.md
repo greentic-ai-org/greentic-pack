@@ -69,16 +69,19 @@ Usage: packc build --in <DIR> [--out <FILE>] [--manifest <FILE>]
 - `--cache-dir` – override the packc cache root (default: `<pack_dir>/.packc/`; env: `GREENTIC_PACK_CACHE_DIR`).
 - `--no-update` – skip the automatic `packc update` that normally runs before a build.
 - `--no-extra-dirs` – only bundle `flows/`, `components/`, and `assets/` (skip other top-level dirs).
+- `--dev` – keep `pack.yaml`, `pack.manifest.json`, flow sources, and other pack artifacts inside the `.gtpack` for debugging.
 
 When a component’s `wasm` path points to a directory, `packc build` only
 packages runtime artifacts: the resolved Wasm (`*.component.wasm` preferred)
 and the component manifest (`component.json` converted to CBOR). Source files
 (README, src/, tmp/, etc.) are deliberately excluded from the `.gtpack`.
 
-By default, `packc build` also bundles additional top-level directories like
-`schemas/` or `templates/` plus files at the pack root into the archive and
-SBOM. Pass `--no-extra-dirs` to keep the archive limited to the standard pack
-outputs.
+By default the generated `.gtpack` contains just `manifest.cbor`, `sbom.cbor`,
+runtime artifacts, and the `assets/` tree, with non-reserved root files
+remapped to `assets/<name>`. Existing files inside `assets/` take priority,
+and conflicts emit a warning rather than overwriting. Pass `--dev` when you
+need to bundle the original source artifacts (`pack.yaml`, `.ygtc`, JSON
+manifests, etc.) for debugging.
 
 `packc` writes structured progress logs to stderr. When invoking inside CI, pass
 `--dry-run` to skip Wasm compilation if the target toolchain is unavailable.
@@ -242,9 +245,10 @@ local dev, CI, and operators. For convenience `plan` also accepts a pack source
 directory; in that case it invokes `packc build --gtpack-out` internally to
 create a temporary archive before running the planner. Set the
 `GREENTIC_PACK_PLAN_PACKC` environment variable if `packc` is not on `PATH`.
-When available, the planner pulls aggregated secret requirements from
-`secret-requirements.json` inside the archive; otherwise it falls back to the
-component manifests bundled in the pack.
+When available, the planner pulls aggregated secret requirements from the
+`secretRequirements` field inside `manifest.cbor` (falling back to
+`secret-requirements.json` if the manifest is missing the data); otherwise it
+falls back to the component manifests bundled in the pack.
 
 ## MCP components and flows
 

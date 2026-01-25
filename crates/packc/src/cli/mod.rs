@@ -146,6 +146,10 @@ pub struct BuildArgs {
     /// Skip auto-including extra directories (e.g. schemas/, templates/)
     #[arg(long = "no-extra-dirs", default_value_t = false)]
     pub no_extra_dirs: bool,
+
+    /// Include source files (pack.yaml, flows) inside the generated .gtpack for debugging
+    #[arg(long = "dev", default_value_t = false)]
+    pub dev: bool,
 }
 
 pub fn run() -> Result<()> {

@@ -2,6 +2,7 @@
 
 use std::io::Write;
 use std::{
+    collections::HashMap,
     fs, io,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -11,14 +12,15 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
 use greentic_pack::validate::{
     ComponentReferencesExistValidator, ProviderReferencesExistValidator,
-    ReferencedFilesExistValidator, SbomConsistencyValidator, ValidateCtx, run_validators,
+    ReferencedFilesExistValidator, SbomConsistencyValidator, SecretRequirementsValidator,
+    ValidateCtx, run_validators,
 };
 use greentic_pack::{PackLoad, SigningPolicy, open_pack};
 use greentic_types::component_source::ComponentSourceRef;
 use greentic_types::pack::extensions::component_sources::{
     ArtifactLocationV1, ComponentSourcesV1, EXT_COMPONENT_SOURCES_V1,
 };
-use greentic_types::pack_manifest::PackManifest;
+use greentic_types::pack_manifest::{ExtensionInline as PackManifestExtensionInline, PackManifest};
 use greentic_types::provider::ProviderDecl;
 use greentic_types::validate::{Diagnostic, Severity, ValidationReport};
 use serde::Serialize;
@@ -31,6 +33,14 @@ use crate::runtime::RuntimeContext;
 use crate::validator::{
     DEFAULT_VALIDATOR_ALLOW, LocalValidator, ValidatorConfig, ValidatorPolicy, run_wasm_validators,
 };
+
+const EXT_BUILD_MODE_ID: &str = "greentic.pack-mode.v1";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PackBuildMode {
+    Prod,
+    Dev,
+}
 
 #[derive(Debug, Parser)]
 pub struct InspectArgs {
@@ -112,18 +122,26 @@ pub async fn handle(args: InspectArgs, json: bool, runtime: &RuntimeContext) -> 
         args.validate
     };
 
-    let load = match mode {
-        InspectMode::Archive(path) => inspect_pack_file(&path)?,
-        InspectMode::Source(path) => {
-            inspect_source_dir(&path, runtime, args.allow_oci_tags).await?
-        }
+    let load = match &mode {
+        InspectMode::Archive(path) => inspect_pack_file(path)?,
+        InspectMode::Source(path) => inspect_source_dir(path, runtime, args.allow_oci_tags).await?,
     };
+    let build_mode = detect_pack_build_mode(&load);
+    if matches!(mode, InspectMode::Archive(_)) && build_mode == PackBuildMode::Prod {
+        let forbidden = find_forbidden_source_paths(&load.files);
+        if !forbidden.is_empty() {
+            bail!(
+                "production pack contains forbidden source files: {}",
+                forbidden.join(", ")
+            );
+        }
+    }
     let validation = if validate_enabled {
         let mut output = run_pack_validation(&load, &args, runtime).await?;
         let mut doctor_diagnostics = Vec::new();
         let mut doctor_errors = false;
         if args.flow_doctor {
-            doctor_errors |= run_flow_doctors(&load, &mut doctor_diagnostics)?;
+            doctor_errors |= run_flow_doctors(&load, &mut doctor_diagnostics, build_mode)?;
         }
         if args.component_doctor {
             doctor_errors |= run_component_doctors(&load, &mut doctor_diagnostics)?;
@@ -168,7 +186,11 @@ pub async fn handle(args: InspectArgs, json: bool, runtime: &RuntimeContext) -> 
     Ok(())
 }
 
-fn run_flow_doctors(load: &PackLoad, diagnostics: &mut Vec<Diagnostic>) -> Result<bool> {
+fn run_flow_doctors(
+    load: &PackLoad,
+    diagnostics: &mut Vec<Diagnostic>,
+    build_mode: PackBuildMode,
+) -> Result<bool> {
     if load.manifest.flows.is_empty() {
         return Ok(false);
     }
@@ -177,6 +199,9 @@ fn run_flow_doctors(load: &PackLoad, diagnostics: &mut Vec<Diagnostic>) -> Resul
 
     for flow in &load.manifest.flows {
         let Some(bytes) = load.files.get(&flow.file_yaml) else {
+            if build_mode == PackBuildMode::Prod {
+                continue;
+            }
             diagnostics.push(Diagnostic {
                 severity: Severity::Error,
                 code: "PACK_FLOW_DOCTOR_MISSING_FLOW".to_string(),
@@ -422,6 +447,63 @@ fn inspect_pack_file(path: &Path) -> Result<PackLoad> {
     Ok(load)
 }
 
+fn detect_pack_build_mode(load: &PackLoad) -> PackBuildMode {
+    if let Some(manifest) = load.gpack_manifest.as_ref()
+        && let Some(mode) = manifest_build_mode(manifest)
+    {
+        return mode;
+    }
+    if load.files.keys().any(|path| path.ends_with(".ygtc")) {
+        return PackBuildMode::Dev;
+    }
+    PackBuildMode::Prod
+}
+
+fn manifest_build_mode(manifest: &PackManifest) -> Option<PackBuildMode> {
+    let extensions = manifest.extensions.as_ref()?;
+    let entry = extensions.get(EXT_BUILD_MODE_ID)?;
+    let inline = entry.inline.as_ref()?;
+    if let PackManifestExtensionInline::Other(value) = inline
+        && let Some(mode) = value.get("mode").and_then(|value| value.as_str())
+    {
+        if mode.eq_ignore_ascii_case("dev") {
+            return Some(PackBuildMode::Dev);
+        }
+        return Some(PackBuildMode::Prod);
+    }
+    None
+}
+
+fn find_forbidden_source_paths(files: &HashMap<String, Vec<u8>>) -> Vec<String> {
+    files
+        .keys()
+        .filter(|path| is_forbidden_source_path(path))
+        .cloned()
+        .collect()
+}
+
+fn is_forbidden_source_path(path: &str) -> bool {
+    if matches!(path, "pack.yaml" | "pack.manifest.json" | "pack.lock.json") {
+        return true;
+    }
+    if matches!(
+        path,
+        "secret-requirements.json" | "secrets_requirements.json"
+    ) {
+        return true;
+    }
+    if path.ends_with(".ygtc") {
+        return true;
+    }
+    if path.starts_with("flows/") && path.ends_with(".json") {
+        return true;
+    }
+    if path.ends_with("manifest.json") {
+        return true;
+    }
+    false
+}
+
 enum InspectMode {
     Archive(PathBuf),
     Source(PathBuf),
@@ -486,6 +568,7 @@ async fn inspect_source_dir(
         allow_oci_tags,
         require_component_manifests: false,
         no_extra_dirs: false,
+        dev: true,
         runtime: runtime.clone(),
         skip_update: false,
     };
@@ -636,6 +719,7 @@ async fn run_pack_validation(
         Box::new(ReferencedFilesExistValidator::new(ctx.clone())),
         Box::new(SbomConsistencyValidator::new(ctx.clone())),
         Box::new(ProviderReferencesExistValidator::new(ctx.clone())),
+        Box::new(SecretRequirementsValidator),
         Box::new(ComponentReferencesExistValidator),
     ];
 

@@ -22,15 +22,17 @@ use greentic_types::pack::extensions::component_sources::{
     ArtifactLocationV1, ComponentSourceEntryV1, ComponentSourcesV1, EXT_COMPONENT_SOURCES_V1,
     ResolvedComponentV1,
 };
+use greentic_types::pack_manifest::{ExtensionInline as PackManifestExtensionInline, ExtensionRef};
 use greentic_types::{
     BootstrapSpec, ComponentCapability, ComponentConfigurators, ComponentId, ComponentManifest,
-    ComponentOperation, ExtensionInline, ExtensionRef, Flow, FlowId, PackDependency, PackFlowEntry,
-    PackId, PackKind, PackManifest, PackSignatures, SecretRequirement, SecretScope, SemverReq,
+    ComponentOperation, ExtensionInline, Flow, FlowId, PackDependency, PackFlowEntry, PackId,
+    PackKind, PackManifest, PackSignatures, SecretRequirement, SecretScope, SemverReq,
     encode_pack_manifest,
 };
 use semver::Version;
 use serde::Serialize;
 use serde_cbor;
+use serde_json::json;
 use serde_yaml_bw::Value as YamlValue;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -38,12 +40,13 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use tracing::info;
+use tracing::{info, warn};
 use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 const SBOM_FORMAT: &str = "greentic-sbom-v1";
+const EXT_BUILD_MODE_ID: &str = "greentic.pack-mode.v1";
 
 #[derive(Serialize)]
 struct SbomDocument {
@@ -72,6 +75,7 @@ pub struct BuildOptions {
     pub allow_oci_tags: bool,
     pub require_component_manifests: bool,
     pub no_extra_dirs: bool,
+    pub dev: bool,
     pub runtime: RuntimeContext,
     pub skip_update: bool,
 }
@@ -124,6 +128,7 @@ impl BuildOptions {
             allow_oci_tags: args.allow_oci_tags,
             require_component_manifests: args.require_component_manifests,
             no_extra_dirs: args.no_extra_dirs,
+            dev: args.dev,
             runtime: runtime.clone(),
             skip_update: args.no_update,
         })
@@ -168,9 +173,11 @@ pub async fn run(opts: &BuildOptions) -> Result<()> {
     );
     validate_components_extension(&config.extensions, opts.allow_oci_tags)?;
 
+    let secret_requirements_override =
+        resolve_secret_requirements_override(&opts.pack_dir, opts.secrets_req.as_ref());
     let secret_requirements = aggregate_secret_requirements(
         &config.components,
-        opts.secrets_req.as_deref(),
+        secret_requirements_override.as_deref(),
         opts.default_secret_scope.as_deref(),
     )?;
 
@@ -192,6 +199,7 @@ pub async fn run(opts: &BuildOptions) -> Result<()> {
         &opts.pack_dir,
         &secret_requirements,
         !opts.no_extra_dirs,
+        opts.dev,
     )?;
     build.lock_components =
         collect_lock_component_artifacts(&mut pack_lock, &opts.runtime, opts.bundle, opts.dry_run)
@@ -243,7 +251,7 @@ pub async fn run(opts: &BuildOptions) -> Result<()> {
 
     if let Some(gtpack_out) = opts.gtpack_out.as_ref() {
         let mut build = build;
-        if !secret_requirements.is_empty() {
+        if opts.dev && !secret_requirements.is_empty() {
             let logical = "secret-requirements.json".to_string();
             let req_path =
                 write_secret_requirements_file(&opts.pack_dir, &secret_requirements, &logical)?;
@@ -252,7 +260,10 @@ pub async fn run(opts: &BuildOptions) -> Result<()> {
                 source: req_path,
             });
         }
-        package_gtpack(gtpack_out, &manifest_bytes, &build, opts.bundle)?;
+        let warnings = package_gtpack(gtpack_out, &manifest_bytes, &build, opts.bundle, opts.dev)?;
+        for warning in warnings {
+            warn!(warning);
+        }
         info!(gtpack_out = %gtpack_out.display(), "gtpack archive ready");
         eprintln!("wrote {}", gtpack_out.display());
     }
@@ -315,6 +326,7 @@ fn assemble_manifest(
     pack_root: &Path,
     secret_requirements: &[SecretRequirement],
     include_extra_dirs: bool,
+    dev_mode: bool,
 ) -> Result<BuildProducts> {
     let components = build_components(&config.components)?;
     let (flows, flow_files) = build_flows(&config.flows, pack_root)?;
@@ -329,7 +341,7 @@ fn assemble_manifest(
     let bootstrap = build_bootstrap(config, &flows, &component_manifests)?;
     let extensions = normalize_extensions(&config.extensions);
 
-    let manifest = PackManifest {
+    let mut manifest = PackManifest {
         schema_version: "pack-v1".to_string(),
         pack_id: PackId::new(config.pack_id.clone()).context("invalid pack_id")?,
         name: config.name.clone(),
@@ -347,6 +359,8 @@ fn assemble_manifest(
         extensions,
     };
 
+    annotate_manifest_build_mode(&mut manifest, dev_mode);
+
     Ok(BuildProducts {
         manifest,
         components: components.into_iter().map(|(_, bin)| bin).collect(),
@@ -356,6 +370,22 @@ fn assemble_manifest(
         assets,
         extra_files,
     })
+}
+
+fn annotate_manifest_build_mode(manifest: &mut PackManifest, dev_mode: bool) {
+    let extensions = manifest.extensions.get_or_insert_with(BTreeMap::new);
+    extensions.insert(
+        EXT_BUILD_MODE_ID.to_string(),
+        ExtensionRef {
+            kind: EXT_BUILD_MODE_ID.to_string(),
+            version: "1".to_string(),
+            digest: None,
+            location: None,
+            inline: Some(PackManifestExtensionInline::Other(json!({
+                "mode": if dev_mode { "dev" } else { "prod" }
+            }))),
+        },
+    );
 }
 
 fn build_components(
@@ -824,7 +854,6 @@ fn collect_extra_dir_files(pack_root: &Path) -> Result<Vec<ExtraFile>> {
     let excluded = [
         "components",
         "flows",
-        "assets",
         "dist",
         "target",
         ".git",
@@ -891,6 +920,59 @@ fn collect_extra_dir_files(pack_root: &Path) -> Result<Vec<ExtraFile>> {
         }
     }
     Ok(entries)
+}
+
+fn map_extra_files(
+    extras: &[ExtraFile],
+    asset_paths: &mut BTreeSet<String>,
+    dev_mode: bool,
+    warnings: &mut Vec<String>,
+) -> Vec<(String, PathBuf)> {
+    let mut mapped = Vec::new();
+    for extra in extras {
+        let logical = extra.logical_path.as_str();
+        if logical.starts_with("assets/") {
+            if asset_paths.insert(logical.to_string()) {
+                mapped.push((logical.to_string(), extra.source.clone()));
+            }
+            continue;
+        }
+        if !logical.contains('/') {
+            if is_reserved_source_file(logical) {
+                if dev_mode {
+                    mapped.push((logical.to_string(), extra.source.clone()));
+                }
+                continue;
+            }
+            let target = format!("assets/{logical}");
+            if asset_paths.insert(target.clone()) {
+                mapped.push((target, extra.source.clone()));
+            } else {
+                warnings.push(format!(
+                    "skipping root asset {logical} because assets/{logical} already exists"
+                ));
+            }
+            continue;
+        }
+        mapped.push((logical.to_string(), extra.source.clone()));
+    }
+    mapped
+}
+
+fn is_reserved_source_file(path: &str) -> bool {
+    matches!(
+        path,
+        "pack.yaml"
+            | "pack.manifest.json"
+            | "pack.lock.json"
+            | "manifest.json"
+            | "manifest.cbor"
+            | "sbom.json"
+            | "sbom.cbor"
+            | "provenance.json"
+            | "secret-requirements.json"
+            | "secrets_requirements.json"
+    ) || path.ends_with(".ygtc")
 }
 
 fn normalize_extensions(
@@ -1099,7 +1181,8 @@ fn package_gtpack(
     manifest_bytes: &[u8],
     build: &BuildProducts,
     bundle: BundleMode,
-) -> Result<()> {
+    dev_mode: bool,
+) -> Result<Vec<String>> {
     if let Some(parent) = out_path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
@@ -1114,6 +1197,8 @@ fn package_gtpack(
 
     let mut sbom_entries = Vec::new();
     let mut written_paths = BTreeSet::new();
+    let mut warnings = Vec::new();
+    let mut asset_paths = BTreeSet::new();
     record_sbom_entry(
         &mut sbom_entries,
         "manifest.cbor",
@@ -1123,22 +1208,24 @@ fn package_gtpack(
     written_paths.insert("manifest.cbor".to_string());
     write_zip_entry(&mut writer, "manifest.cbor", manifest_bytes, options)?;
 
-    let mut flow_files = build.flow_files.clone();
-    flow_files.sort_by(|a, b| a.logical_path.cmp(&b.logical_path));
-    for flow_file in flow_files {
-        if written_paths.insert(flow_file.logical_path.clone()) {
-            record_sbom_entry(
-                &mut sbom_entries,
-                &flow_file.logical_path,
-                &flow_file.bytes,
-                flow_file.media_type,
-            );
-            write_zip_entry(
-                &mut writer,
-                &flow_file.logical_path,
-                &flow_file.bytes,
-                options,
-            )?;
+    if dev_mode {
+        let mut flow_files = build.flow_files.clone();
+        flow_files.sort_by(|a, b| a.logical_path.cmp(&b.logical_path));
+        for flow_file in flow_files {
+            if written_paths.insert(flow_file.logical_path.clone()) {
+                record_sbom_entry(
+                    &mut sbom_entries,
+                    &flow_file.logical_path,
+                    &flow_file.bytes,
+                    flow_file.media_type,
+                );
+                write_zip_entry(
+                    &mut writer,
+                    &flow_file.logical_path,
+                    &flow_file.bytes,
+                    options,
+                )?;
+            }
         }
     }
 
@@ -1223,31 +1310,19 @@ fn package_gtpack(
         }
     }
 
-    let mut asset_entries: Vec<_> = build
-        .assets
-        .iter()
-        .map(|a| (format!("assets/{}", &a.logical_path), a.source.clone()))
-        .collect();
-    asset_entries.sort_by(|a, b| a.0.cmp(&b.0));
-    for (logical, source) in asset_entries {
-        let bytes = fs::read(&source)
-            .with_context(|| format!("failed to read asset {}", source.display()))?;
-        if written_paths.insert(logical.clone()) {
-            record_sbom_entry(
-                &mut sbom_entries,
-                &logical,
-                &bytes,
-                "application/octet-stream",
-            );
-            write_zip_entry(&mut writer, &logical, &bytes, options)?;
-        }
+    let mut extra_entries: Vec<_> = Vec::new();
+    for asset in &build.assets {
+        let logical = format!("assets/{}", asset.logical_path);
+        asset_paths.insert(logical.clone());
+        extra_entries.push((logical, asset.source.clone()));
     }
-
-    let mut extra_entries: Vec<_> = build
-        .extra_files
-        .iter()
-        .map(|e| (e.logical_path.clone(), e.source.clone()))
-        .collect();
+    let mut mapped_extra = map_extra_files(
+        &build.extra_files,
+        &mut asset_paths,
+        dev_mode,
+        &mut warnings,
+    );
+    extra_entries.append(&mut mapped_extra);
     extra_entries.sort_by(|a, b| a.0.cmp(&b.0));
     for (logical, source) in extra_entries {
         if !written_paths.insert(logical.clone()) {
@@ -1275,7 +1350,7 @@ fn package_gtpack(
     writer
         .finish()
         .context("failed to finalise gtpack archive")?;
-    Ok(())
+    Ok(warnings)
 }
 
 async fn collect_lock_component_artifacts(
@@ -1884,14 +1959,34 @@ fn write_secret_requirements_file(
     Ok(path)
 }
 
+fn resolve_secret_requirements_override(
+    pack_root: &Path,
+    override_path: Option<&PathBuf>,
+) -> Option<PathBuf> {
+    if let Some(path) = override_path {
+        return Some(path.clone());
+    }
+    find_secret_requirements_file(pack_root)
+}
+
+fn find_secret_requirements_file(pack_root: &Path) -> Option<PathBuf> {
+    for name in ["secrets_requirements.json", "secret-requirements.json"] {
+        let candidate = pack_root.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::BootstrapConfig;
     use crate::runtime::resolve_runtime;
     use greentic_pack::pack_lock::{LockedComponent, PackLockV1};
-    use greentic_types::ComponentId;
     use greentic_types::flow::FlowKind;
+    use greentic_types::{ComponentId, decode_pack_manifest};
     use serde_json::json;
     use sha2::{Digest, Sha256};
     use std::collections::BTreeSet;
@@ -2000,7 +2095,7 @@ mod tests {
         assert!(paths.contains("schemas/config.schema.json"));
         assert!(!paths.contains("schemas/.nested/skip.json"));
         assert!(!paths.contains(".hidden/secret.txt"));
-        assert!(!paths.iter().any(|path| path.starts_with("assets/")));
+        assert!(paths.contains("assets/asset.txt"));
     }
 
     #[test]
@@ -2126,7 +2221,9 @@ mod tests {
         };
 
         let out = temp.path().join("demo.gtpack");
-        package_gtpack(&out, &manifest_bytes, &build, BundleMode::Cache).expect("package gtpack");
+        let warnings = package_gtpack(&out, &manifest_bytes, &build, BundleMode::Cache, false)
+            .expect("package gtpack");
+        assert!(warnings.is_empty(), "expected no packaging warnings");
 
         let mut archive = ZipArchive::new(fs::File::open(&out).expect("open gtpack"))
             .expect("read gtpack archive");
@@ -2144,6 +2241,239 @@ mod tests {
             .find(|item| item.id == component.id)
             .expect("component preserved");
         assert_eq!(stored_component.dev_flows, component.dev_flows);
+    }
+
+    #[test]
+    fn prod_gtpack_excludes_forbidden_files() {
+        let component = manifest_with_dev_flow();
+        let pack_manifest = pack_manifest_with_component(component.clone());
+        let manifest_bytes = encode_pack_manifest(&pack_manifest).expect("encode manifest");
+
+        let temp = tempdir().expect("temp dir");
+        let wasm_path = temp.path().join("component.wasm");
+        write_stub_wasm(&wasm_path).expect("write stub wasm");
+
+        let pack_yaml = temp.path().join("pack.yaml");
+        fs::write(&pack_yaml, "pack").expect("write pack.yaml");
+        let pack_manifest_json = temp.path().join("pack.manifest.json");
+        fs::write(&pack_manifest_json, "{}").expect("write manifest json");
+
+        let build = BuildProducts {
+            manifest: pack_manifest,
+            components: vec![ComponentBinary {
+                id: component.id.to_string(),
+                source: wasm_path,
+                manifest_bytes: serde_cbor::to_vec(&component).expect("component cbor"),
+                manifest_path: format!("components/{}.manifest.cbor", component.id),
+                manifest_hash_sha256: {
+                    let mut sha = Sha256::new();
+                    sha.update(serde_cbor::to_vec(&component).expect("component cbor"));
+                    format!("sha256:{:x}", sha.finalize())
+                },
+            }],
+            lock_components: Vec::new(),
+            component_manifest_files: Vec::new(),
+            flow_files: Vec::new(),
+            assets: Vec::new(),
+            extra_files: vec![
+                ExtraFile {
+                    logical_path: "pack.yaml".to_string(),
+                    source: pack_yaml,
+                },
+                ExtraFile {
+                    logical_path: "pack.manifest.json".to_string(),
+                    source: pack_manifest_json,
+                },
+            ],
+        };
+
+        let out = temp.path().join("prod.gtpack");
+        let warnings = package_gtpack(&out, &manifest_bytes, &build, BundleMode::Cache, false)
+            .expect("package gtpack");
+        assert!(
+            warnings.is_empty(),
+            "no warnings expected for forbidden drop"
+        );
+
+        let mut archive = ZipArchive::new(fs::File::open(&out).expect("open gtpack"))
+            .expect("read gtpack archive");
+        assert!(archive.by_name("pack.yaml").is_err());
+        assert!(archive.by_name("pack.manifest.json").is_err());
+    }
+
+    #[test]
+    fn asset_mapping_prefers_assets_version_on_conflict() {
+        let component = manifest_with_dev_flow();
+        let pack_manifest = pack_manifest_with_component(component.clone());
+        let manifest_bytes = encode_pack_manifest(&pack_manifest).expect("encode manifest");
+
+        let temp = tempdir().expect("temp dir");
+        let wasm_path = temp.path().join("component.wasm");
+        write_stub_wasm(&wasm_path).expect("write stub wasm");
+
+        let assets_dir = temp.path().join("assets");
+        fs::create_dir_all(&assets_dir).expect("create assets dir");
+        let asset_file = assets_dir.join("README.md");
+        fs::write(&asset_file, "asset").expect("write asset");
+        let root_asset = temp.path().join("README.md");
+        fs::write(&root_asset, "root").expect("write root file");
+
+        let build = BuildProducts {
+            manifest: pack_manifest,
+            components: vec![ComponentBinary {
+                id: component.id.to_string(),
+                source: wasm_path,
+                manifest_bytes: serde_cbor::to_vec(&component).expect("component cbor"),
+                manifest_path: format!("components/{}.manifest.cbor", component.id),
+                manifest_hash_sha256: {
+                    let mut sha = Sha256::new();
+                    sha.update(serde_cbor::to_vec(&component).expect("component cbor"));
+                    format!("sha256:{:x}", sha.finalize())
+                },
+            }],
+            lock_components: Vec::new(),
+            component_manifest_files: Vec::new(),
+            flow_files: Vec::new(),
+            assets: Vec::new(),
+            extra_files: vec![
+                ExtraFile {
+                    logical_path: "assets/README.md".to_string(),
+                    source: asset_file,
+                },
+                ExtraFile {
+                    logical_path: "README.md".to_string(),
+                    source: root_asset,
+                },
+            ],
+        };
+
+        let out = temp.path().join("conflict.gtpack");
+        let warnings = package_gtpack(&out, &manifest_bytes, &build, BundleMode::Cache, false)
+            .expect("package gtpack");
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("skipping root asset README.md"))
+        );
+
+        let mut archive = ZipArchive::new(fs::File::open(&out).expect("open gtpack"))
+            .expect("read gtpack archive");
+        assert!(archive.by_name("README.md").is_err());
+        assert!(archive.by_name("assets/README.md").is_ok());
+    }
+
+    #[test]
+    fn root_files_map_under_assets_directory() {
+        let component = manifest_with_dev_flow();
+        let pack_manifest = pack_manifest_with_component(component.clone());
+        let manifest_bytes = encode_pack_manifest(&pack_manifest).expect("encode manifest");
+
+        let temp = tempdir().expect("temp dir");
+        let wasm_path = temp.path().join("component.wasm");
+        write_stub_wasm(&wasm_path).expect("write stub wasm");
+        let root_asset = temp.path().join("notes.txt");
+        fs::write(&root_asset, "notes").expect("write root asset");
+
+        let build = BuildProducts {
+            manifest: pack_manifest,
+            components: vec![ComponentBinary {
+                id: component.id.to_string(),
+                source: wasm_path,
+                manifest_bytes: serde_cbor::to_vec(&component).expect("component cbor"),
+                manifest_path: format!("components/{}.manifest.cbor", component.id),
+                manifest_hash_sha256: {
+                    let mut sha = Sha256::new();
+                    sha.update(serde_cbor::to_vec(&component).expect("component cbor"));
+                    format!("sha256:{:x}", sha.finalize())
+                },
+            }],
+            lock_components: Vec::new(),
+            component_manifest_files: Vec::new(),
+            flow_files: Vec::new(),
+            assets: Vec::new(),
+            extra_files: vec![ExtraFile {
+                logical_path: "notes.txt".to_string(),
+                source: root_asset,
+            }],
+        };
+
+        let out = temp.path().join("root-assets.gtpack");
+        let warnings = package_gtpack(&out, &manifest_bytes, &build, BundleMode::Cache, false)
+            .expect("package gtpack");
+        assert!(
+            warnings.iter().all(|w| !w.contains("notes.txt")),
+            "root asset mapping should not warn without conflict"
+        );
+
+        let mut archive = ZipArchive::new(fs::File::open(&out).expect("open gtpack"))
+            .expect("read gtpack archive");
+        assert!(archive.by_name("assets/notes.txt").is_ok());
+        assert!(archive.by_name("notes.txt").is_err());
+    }
+
+    #[test]
+    fn prod_gtpack_embeds_secret_requirements_cbor_only() {
+        let component = manifest_with_dev_flow();
+        let mut pack_manifest = pack_manifest_with_component(component.clone());
+        let secret_requirement: SecretRequirement = serde_json::from_value(json!({
+            "key": "demo/token",
+            "required": true,
+            "description": "demo secret",
+            "scope": { "env": "dev", "tenant": "demo" }
+        }))
+        .expect("parse secret requirement");
+        pack_manifest.secret_requirements = vec![secret_requirement.clone()];
+        let manifest_bytes = encode_pack_manifest(&pack_manifest).expect("encode manifest");
+
+        let temp = tempdir().expect("temp dir");
+        let wasm_path = temp.path().join("component.wasm");
+        write_stub_wasm(&wasm_path).expect("write stub wasm");
+        let secret_file = temp.path().join("secret-requirements.json");
+        fs::write(&secret_file, "[{}]").expect("write secret json");
+
+        let build = BuildProducts {
+            manifest: pack_manifest,
+            components: vec![ComponentBinary {
+                id: component.id.to_string(),
+                source: wasm_path,
+                manifest_bytes: serde_cbor::to_vec(&component).expect("component cbor"),
+                manifest_path: format!("components/{}.manifest.cbor", component.id),
+                manifest_hash_sha256: {
+                    let mut sha = Sha256::new();
+                    sha.update(serde_cbor::to_vec(&component).expect("component cbor"));
+                    format!("sha256:{:x}", sha.finalize())
+                },
+            }],
+            lock_components: Vec::new(),
+            component_manifest_files: Vec::new(),
+            flow_files: Vec::new(),
+            assets: Vec::new(),
+            extra_files: vec![ExtraFile {
+                logical_path: "secret-requirements.json".to_string(),
+                source: secret_file,
+            }],
+        };
+
+        let out = temp.path().join("secrets.gtpack");
+        package_gtpack(&out, &manifest_bytes, &build, BundleMode::Cache, false)
+            .expect("package gtpack");
+
+        let mut archive = ZipArchive::new(fs::File::open(&out).expect("open gtpack"))
+            .expect("read gtpack archive");
+        assert!(archive.by_name("secret-requirements.json").is_err());
+        assert!(archive.by_name("assets/secret-requirements.json").is_err());
+        assert!(archive.by_name("secrets_requirements.json").is_err());
+        assert!(archive.by_name("assets/secrets_requirements.json").is_err());
+
+        let mut manifest_entry = archive
+            .by_name("manifest.cbor")
+            .expect("manifest.cbor present");
+        let mut manifest_buf = Vec::new();
+        manifest_entry
+            .read_to_end(&mut manifest_buf)
+            .expect("read manifest bytes");
+        let decoded = decode_pack_manifest(&manifest_buf).expect("decode manifest");
+        assert_eq!(decoded.secret_requirements, vec![secret_requirement]);
     }
 
     #[test]
@@ -2397,6 +2727,7 @@ flows:
                 allow_oci_tags: false,
                 require_component_manifests: false,
                 no_extra_dirs: false,
+                dev: false,
                 runtime,
                 skip_update: false,
             };
@@ -2518,6 +2849,7 @@ flows:
                 allow_oci_tags: false,
                 require_component_manifests: false,
                 no_extra_dirs: false,
+                dev: false,
                 runtime,
                 skip_update: false,
             };

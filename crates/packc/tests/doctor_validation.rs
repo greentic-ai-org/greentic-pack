@@ -1,15 +1,14 @@
 use std::fs;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use greentic_types::{PackManifest, encode_pack_manifest};
-use serde_json::Value;
+use greentic_types::{PackManifest, decode_pack_manifest, encode_pack_manifest};
+use serde_json::{Value, json};
 use walkdir::WalkDir;
-use zip::CompressionMethod;
-use zip::ZipWriter;
 use zip::write::FileOptions;
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -174,6 +173,122 @@ fn doctor_reports_sbom_dangling_path() {
 }
 
 #[test]
+fn doctor_reads_secret_requirements_from_manifest_only() {
+    let (_pack_temp, pack_dir) = copy_fixture_to_temp("valid-minimal");
+    let secrets = json!([{
+        "key": "demo/token",
+        "scope": { "env": "dev", "tenant": "demo" }
+    }]);
+    fs::write(
+        pack_dir.join("secret-requirements.json"),
+        serde_json::to_string_pretty(&secrets).expect("serialize secrets"),
+    )
+    .expect("write secret requirements");
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let pack_path = temp.path().join("manifest-secrets.gtpack");
+    let build_output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
+        .current_dir(workspace_root())
+        .args([
+            "build",
+            "--in",
+            pack_dir.to_str().unwrap(),
+            "--gtpack-out",
+            pack_path.to_str().unwrap(),
+            "--no-update",
+        ])
+        .output()
+        .expect("run build command");
+    assert!(build_output.status.success(), "building pack should work");
+
+    let doctor_output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
+        .current_dir(workspace_root())
+        .args([
+            "doctor",
+            "--pack",
+            pack_path.to_str().unwrap(),
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
+        .output()
+        .expect("run doctor command");
+    assert!(
+        doctor_output.status.success(),
+        "doctor should succeed without JSON secrets artifacts"
+    );
+}
+
+#[test]
+fn doctor_fails_when_secret_scope_missing_in_manifest() {
+    let (_pack_temp, pack_dir) = copy_fixture_to_temp("valid-minimal");
+    let secrets = json!([{
+        "key": "demo/token",
+        "scope": { "env": "dev", "tenant": "demo" }
+    }]);
+    fs::write(
+        pack_dir.join("secret-requirements.json"),
+        serde_json::to_string_pretty(&secrets).expect("serialize secrets"),
+    )
+    .expect("write secret requirements");
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let pack_path = temp.path().join("bad-secrets.gtpack");
+    let build_output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
+        .current_dir(workspace_root())
+        .args([
+            "build",
+            "--in",
+            pack_dir.to_str().unwrap(),
+            "--gtpack-out",
+            pack_path.to_str().unwrap(),
+            "--no-update",
+        ])
+        .output()
+        .expect("run build command");
+    assert!(build_output.status.success(), "building pack should work");
+
+    mutate_manifest(&pack_path, |manifest| {
+        for requirement in manifest.secret_requirements.iter_mut() {
+            requirement.scope = None;
+        }
+    });
+
+    let doctor_output = Command::new(assert_cmd::cargo::cargo_bin!("greentic-pack"))
+        .current_dir(workspace_root())
+        .args([
+            "doctor",
+            "--pack",
+            pack_path.to_str().unwrap(),
+            "--json",
+            "--no-flow-doctor",
+            "--no-component-doctor",
+        ])
+        .output()
+        .expect("run doctor command");
+    assert!(
+        !doctor_output.status.success(),
+        "doctor should fail when secret requirements lose their scope"
+    );
+
+    let payload: Value = serde_json::from_slice(&doctor_output.stdout).expect("doctor JSON output");
+    let diagnostics = payload
+        .get("validation")
+        .and_then(|val| val.get("diagnostics"))
+        .and_then(|val| val.as_array())
+        .expect("validation diagnostics present");
+    assert!(
+        diagnostics.iter().any(|diag| {
+            diag.get("code")
+                .and_then(|val| val.as_str())
+                .map(|code| code == "PACK_SECRET_REQUIREMENTS_INVALID")
+                .unwrap_or(false)
+        }),
+        "expected secret requirements diagnostic"
+    );
+}
+
+#[test]
 fn doctor_loads_validator_pack_from_root() {
     let (_pack_temp, pack_dir) = copy_fixture_to_temp("valid-minimal");
     let validators_dir = validators_fixture_dir();
@@ -296,5 +411,39 @@ fn write_gtpack_from_fixture(fixture: &Path, dest: &Path) {
         .expect("start sbom entry");
     writer.write_all(&sbom_bytes).expect("write sbom entry");
 
+    writer.finish().expect("finish pack");
+}
+
+fn mutate_manifest<F>(pack_path: &Path, mutator: F)
+where
+    F: FnOnce(&mut PackManifest),
+{
+    let file = File::open(pack_path).expect("open pack for mutation");
+    let mut archive = ZipArchive::new(file).expect("read pack archive");
+    let mut entries = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).expect("read entry");
+        let name = entry.name().to_string();
+        let mut data = Vec::new();
+        entry.read_to_end(&mut data).expect("read entry data");
+        entries.push((name, data));
+    }
+
+    for (name, data) in entries.iter_mut() {
+        if name == "manifest.cbor" {
+            let mut manifest = decode_pack_manifest(data).expect("decode packaged manifest");
+            mutator(&mut manifest);
+            *data = encode_pack_manifest(&manifest).expect("encode manifest");
+            break;
+        }
+    }
+
+    let file = File::create(pack_path).expect("recreate pack archive");
+    let mut writer = ZipWriter::new(file);
+    let options = FileOptions::<()>::default().compression_method(CompressionMethod::Stored);
+    for (name, data) in entries {
+        writer.start_file(name, options).expect("start entry");
+        writer.write_all(&data).expect("write entry");
+    }
     writer.finish().expect("finish pack");
 }

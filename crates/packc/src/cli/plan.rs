@@ -1,8 +1,6 @@
 #![forbid(unsafe_code)]
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -11,7 +9,6 @@ use greentic_pack::plan::infer_base_deployment_plan;
 use greentic_pack::reader::{PackLoad, SigningPolicy, open_pack};
 use greentic_types::component::ComponentManifest;
 use greentic_types::{EnvId, SecretRequirement, TenantCtx, TenantId};
-use zip::ZipArchive;
 
 use crate::cli::input::materialize_pack_path;
 
@@ -61,7 +58,7 @@ fn plan_for_pack(
     let load = open_pack(path, SigningPolicy::DevOk).map_err(|err| anyhow!(err.message))?;
     let connectors = load.manifest.meta.annotations.get("connectors");
     let components = load_component_manifests(&load)?;
-    let secret_requirements = load_secret_requirements(path).unwrap_or(None);
+    let secret_requirements = load_secret_requirements(&load).unwrap_or(None);
 
     Ok(infer_base_deployment_plan(
         &load.manifest.meta,
@@ -96,22 +93,20 @@ fn load_component_manifests(load: &PackLoad) -> Result<HashMap<String, Component
     Ok(manifests)
 }
 
-fn load_secret_requirements(path: &Path) -> Result<Option<Vec<SecretRequirement>>> {
-    let file = File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
-    let mut archive = ZipArchive::new(file)
-        .with_context(|| format!("{} is not a valid gtpack archive", path.display()))?;
+fn load_secret_requirements(load: &PackLoad) -> Result<Option<Vec<SecretRequirement>>> {
+    if let Some(manifest) = load.gpack_manifest.as_ref()
+        && !manifest.secret_requirements.is_empty()
+    {
+        return Ok(Some(manifest.secret_requirements.clone()));
+    }
 
     for name in [
         "assets/secret-requirements.json",
         "secret-requirements.json",
     ] {
-        if let Ok(mut entry) = archive.by_name(name) {
-            let mut buf = String::new();
-            entry
-                .read_to_string(&mut buf)
-                .context("failed to read secret requirements file")?;
-            let reqs: Vec<SecretRequirement> =
-                serde_json::from_str(&buf).context("secret requirements file is invalid JSON")?;
+        if let Some(bytes) = load.files.get(name) {
+            let reqs: Vec<SecretRequirement> = serde_json::from_slice(bytes)
+                .context("secret requirements file is invalid JSON")?;
             return Ok(Some(reqs));
         }
     }

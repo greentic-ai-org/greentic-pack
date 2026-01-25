@@ -11,29 +11,33 @@ normalised to `0644`. The root contains the following directories:
 
 ```
 manifest.cbor              # canonical CBOR manifest
-manifest.json              # human readable manifest
-sbom.json                  # SPDX-like file catalogue
-provenance.json            # build metadata (builder, git sha, toolchain)
-flows/<id>/flow.ygtc       # canonical YAML source
-flows/<id>/flow.json       # normalised JSON derived from the `.ygtc` source
+sbom.cbor                  # CBOR inventory of every payload stored in the archive
 schemas/<name>@<ver>/...   # optional node schema
 components/<name>@<ver>/component.wasm
-components/<name>@<ver>/manifest.json (optional)
-assets/...                 # optional additional assets
-signatures/pack.sig        # JSON envelope over digests
+components/<name>@<ver>/manifest.cbor (optional)
+assets/...                 # mapped root files plus other auxiliary assets
+signatures/pack.sig        # JSON signature envelope covering the manifest + SBOM
 signatures/chain.pem       # signing certificate chain
 ```
 
-Flow sources are kept as `.ygtc` files; the canonical JSON under each
-`flows/<id>/flow.json` is computed by `greentic-flow` and reflects the same
-data used inside the `.gtpack`.
+Production `.gtpack` archives include only the canonical CBOR manifest, its SBOM,
+runtime artifacts (WASM + component manifests), asset material, and the signature
+bundle. Flow definitions and pack sources live inside `manifest.cbor`; the
+individual `.ygtc`/JSON files are generated only when `greentic-pack build --dev`
+is requested (or when `greentic-pack doctor` inspects a source directory).
+
+Any non-reserved file at the pack root is remapped to `assets/<filename>` inside
+the archive, while complete directories (e.g. `schemas/`, `templates/`) are
+included as-is. The contents of an existing `assets/` directory are bundled
+verbatim and take precedence: if a root file would conflict with `assets/<name>`,
+the archive keeps the `assets` version and emits a warning instead of overwriting.
 
 Only regular files are allowed—directories, symlinks, and special entries are
 rejected by the reader before any manifest parsing occurs.
 
 ## Hashing & SBOM
 
-Every payload file (excluding `signatures/*`) is recorded in `sbom.json` as a
+Every payload file (excluding `signatures/*`) is recorded in `sbom.cbor` as a
 `SbomEntry` with the relative path, byte length, media type, and BLAKE3 digest.
 During verification the reader recomputes all hashes and also ensures that every
 file present in the archive is listed in the SBOM. This SBOM is also part of the
@@ -41,7 +45,7 @@ signature input.
 
 The CycloneDX file tracked as `dist/sbom.cdx.json` is derived from this same
 inventory. When you build a `.gtpack` via `packc --gtpack-out`, the CycloneDX
-artifact and the archive’s own `sbom.json` are produced from the same flows and
+artifact and the archive’s own `sbom.cbor` are produced from the same flows and
 templates even though their formatting differs.
 
 Common media types:

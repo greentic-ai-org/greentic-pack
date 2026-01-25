@@ -212,6 +212,7 @@ pub async fn handle(
         allow_oci_tags: false,
         require_component_manifests: false,
         no_extra_dirs: false,
+        dev: false,
         runtime: runtime.clone(),
         skip_update: false,
     };
