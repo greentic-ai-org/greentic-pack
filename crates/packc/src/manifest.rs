@@ -131,6 +131,8 @@ pub fn load_spec(pack_dir: &Path) -> Result<SpecBundle> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackManifest {
     pub pack_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub version: String,
     pub created_at: String,
     pub flows: Vec<FlowEntry>,
@@ -377,6 +379,7 @@ pub fn build_manifest(
 
     PackManifest {
         pack_id: bundle.spec.id.clone(),
+        name: bundle.spec.name.clone(),
         version: bundle.spec.version.clone(),
         created_at,
         flows: flow_entries,

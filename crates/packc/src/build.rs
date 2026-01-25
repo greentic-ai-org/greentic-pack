@@ -332,6 +332,7 @@ fn assemble_manifest(
     let manifest = PackManifest {
         schema_version: "pack-v1".to_string(),
         pack_id: PackId::new(config.pack_id.clone()).context("invalid pack_id")?,
+        name: config.name.clone(),
         version: Version::parse(&config.version)
             .context("invalid pack version (expected semver)")?,
         kind: map_kind(&config.kind)?,
@@ -382,25 +383,26 @@ fn resolve_component_artifacts(
 ) -> Result<(ComponentManifest, ComponentBinary)> {
     let resolved_wasm = resolve_component_wasm_path(&cfg.wasm)?;
 
-    let mut manifest = if let Some(from_disk) = load_component_manifest_from_disk(&resolved_wasm)? {
-        if from_disk.id.to_string() != cfg.id {
-            anyhow::bail!(
-                "component manifest id {} does not match pack.yaml id {}",
-                from_disk.id,
-                cfg.id
-            );
-        }
-        if from_disk.version.to_string() != cfg.version {
-            anyhow::bail!(
-                "component manifest version {} does not match pack.yaml version {}",
-                from_disk.version,
-                cfg.version
-            );
-        }
-        from_disk
-    } else {
-        manifest_from_config(cfg)?
-    };
+    let mut manifest =
+        if let Some(from_disk) = load_component_manifest_from_disk(&resolved_wasm, &cfg.id)? {
+            if from_disk.id.to_string() != cfg.id {
+                anyhow::bail!(
+                    "component manifest id {} does not match pack.yaml id {}",
+                    from_disk.id,
+                    cfg.id
+                );
+            }
+            if from_disk.version.to_string() != cfg.version {
+                anyhow::bail!(
+                    "component manifest version {} does not match pack.yaml version {}",
+                    from_disk.version,
+                    cfg.version
+                );
+            }
+            from_disk
+        } else {
+            manifest_from_config(cfg)?
+        };
 
     // Ensure operations are populated from pack.yaml when missing in the on-disk manifest.
     if manifest.operations.is_empty() && !cfg.operations.is_empty() {
@@ -525,7 +527,10 @@ fn resolve_component_wasm_path(path: &Path) -> Result<PathBuf> {
     );
 }
 
-fn load_component_manifest_from_disk(path: &Path) -> Result<Option<ComponentManifest>> {
+fn load_component_manifest_from_disk(
+    path: &Path,
+    component_id: &str,
+) -> Result<Option<ComponentManifest>> {
     let manifest_dir = if path.is_dir() {
         path.to_path_buf()
     } else {
@@ -533,11 +538,16 @@ fn load_component_manifest_from_disk(path: &Path) -> Result<Option<ComponentMani
             .map(Path::to_path_buf)
             .ok_or_else(|| anyhow!("component path {} has no parent directory", path.display()))?
     };
-    let candidates = [
+    let mut candidates = vec![
         manifest_dir.join("component.manifest.cbor"),
         manifest_dir.join("component.manifest.json"),
         manifest_dir.join("component.json"),
     ];
+    let id_manifest_suffix = format!("{}.manifest", component_id);
+    candidates.push(manifest_dir.join(format!("{id_manifest_suffix}.cbor")));
+    candidates.push(manifest_dir.join(format!("{id_manifest_suffix}.json")));
+    candidates.push(manifest_dir.join(format!("{component_id}.json")));
+
     for manifest_path in candidates {
         if !manifest_path.exists() {
             continue;
@@ -806,6 +816,10 @@ fn collect_assets(configs: &[AssetConfig], pack_root: &Path) -> Result<Vec<Asset
     Ok(assets)
 }
 
+fn is_reserved_extra_file(logical_path: &str) -> bool {
+    matches!(logical_path, "sbom.cbor" | "sbom.json")
+}
+
 fn collect_extra_dir_files(pack_root: &Path) -> Result<Vec<ExtraFile>> {
     let excluded = [
         "components",
@@ -830,6 +844,9 @@ fn collect_extra_dir_files(pack_root: &Path) -> Result<Vec<ExtraFile>> {
         let name = name.to_string_lossy();
         if entry_type.is_file() {
             let logical = name.to_string();
+            if is_reserved_extra_file(&logical) {
+                continue;
+            }
             if !logical.is_empty() && seen.insert(logical.clone()) {
                 entries.push(ExtraFile {
                     logical_path: logical,
@@ -862,6 +879,9 @@ fn collect_extra_dir_files(pack_root: &Path) -> Result<Vec<ExtraFile>> {
                 .collect::<Vec<_>>()
                 .join("/");
             if logical.is_empty() || !seen.insert(logical.clone()) {
+                continue;
+            }
+            if is_reserved_extra_file(&logical) {
                 continue;
             }
             entries.push(ExtraFile {
@@ -1907,6 +1927,55 @@ mod tests {
         assert_eq!(collected[0].logical_path, "assets/foo.txt");
     }
 
+    fn write_sample_manifest(path: &Path, component_id: &str) {
+        let manifest: ComponentManifest = serde_json::from_value(json!({
+            "id": component_id,
+            "version": "0.1.0",
+            "supports": [],
+            "world": "greentic:component/component@0.5.0",
+            "profiles": { "default": "stateless", "supported": ["stateless"] },
+            "capabilities": { "wasi": {}, "host": {} },
+            "operations": [],
+            "resources": {},
+            "dev_flows": {}
+        }))
+        .expect("manifest");
+        let bytes = serde_cbor::to_vec(&manifest).expect("encode manifest");
+        fs::write(path, bytes).expect("write manifest");
+    }
+
+    #[test]
+    fn load_component_manifest_from_disk_supports_id_specific_files() {
+        let temp = tempdir().expect("temp dir");
+        let components = temp.path().join("components");
+        fs::create_dir_all(&components).expect("create components dir");
+        let wasm = components.join("component.wasm");
+        fs::write(&wasm, b"wasm").expect("write wasm");
+        let manifest_name = components.join("foo.component.manifest.cbor");
+        write_sample_manifest(&manifest_name, "foo.component");
+
+        let manifest =
+            load_component_manifest_from_disk(&wasm, "foo.component").expect("load manifest");
+        let manifest = manifest.expect("manifest present");
+        assert_eq!(manifest.id.to_string(), "foo.component");
+    }
+
+    #[test]
+    fn load_component_manifest_from_disk_accepts_generic_names() {
+        let temp = tempdir().expect("temp dir");
+        let components = temp.path().join("components");
+        fs::create_dir_all(&components).expect("create components dir");
+        let wasm = components.join("component.wasm");
+        fs::write(&wasm, b"wasm").expect("write wasm");
+        let manifest_name = components.join("component.manifest.cbor");
+        write_sample_manifest(&manifest_name, "component");
+
+        let manifest =
+            load_component_manifest_from_disk(&wasm, "component").expect("load manifest");
+        let manifest = manifest.expect("manifest present");
+        assert_eq!(manifest.id.to_string(), "component");
+    }
+
     #[test]
     fn collect_extra_dir_files_skips_hidden_and_known_dirs() {
         let temp = tempdir().expect("temp dir");
@@ -1932,6 +2001,21 @@ mod tests {
         assert!(!paths.contains("schemas/.nested/skip.json"));
         assert!(!paths.contains(".hidden/secret.txt"));
         assert!(!paths.iter().any(|path| path.starts_with("assets/")));
+    }
+
+    #[test]
+    fn collect_extra_dir_files_skips_reserved_sbom_files() {
+        let temp = tempdir().expect("temp dir");
+        let root = temp.path();
+        fs::write(root.join("sbom.cbor"), b"binary").expect("sbom file");
+        fs::write(root.join("sbom.json"), b"{}").expect("sbom json");
+        fs::write(root.join("README.md"), b"hello").expect("root file");
+
+        let collected = collect_extra_dir_files(root).expect("collect extra dirs");
+        let paths: BTreeSet<_> = collected.iter().map(|e| e.logical_path.as_str()).collect();
+        assert!(paths.contains("README.md"));
+        assert!(!paths.contains("sbom.cbor"));
+        assert!(!paths.contains("sbom.json"));
     }
 
     #[test]
@@ -2524,6 +2608,7 @@ flows:
             version: "1.0.0".to_string(),
             kind: "application".to_string(),
             publisher: "demo".to_string(),
+            name: None,
             bootstrap: Some(bootstrap),
             components: Vec::new(),
             dependencies: Vec::new(),
@@ -2582,6 +2667,7 @@ flows:
         PackManifest {
             schema_version: "pack-v1".to_string(),
             pack_id: PackId::new("demo.pack").expect("pack id"),
+            name: None,
             version: Version::parse("1.0.0").expect("version"),
             kind: PackKind::Application,
             publisher: "demo".to_string(),

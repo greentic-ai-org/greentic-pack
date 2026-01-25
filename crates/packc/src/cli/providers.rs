@@ -247,6 +247,7 @@ fn downgrade_legacy_manifest(
     Ok(PackManifest {
         schema_version: "pack-v1".to_string(),
         pack_id,
+        name: Some(manifest.meta.name.clone()),
         version: manifest.meta.version.clone(),
         kind: PackKind::Application,
         publisher: manifest.meta.authors.first().cloned().unwrap_or_default(),

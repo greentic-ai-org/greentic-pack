@@ -164,6 +164,30 @@ Subcommands:
 - `info <PROVIDER_ID> --pack <PATH> [--json]`
 - `validate --pack <PATH> [--strict] [--json]`
 
+### `add-extension provider`
+
+Add or amend the provider extension entry stored in `pack.yaml`.
+
+```
+greentic-pack add-extension provider [options]
+```
+
+Options:
+- `--pack-dir <DIR>`: update a source directory containing `pack.yaml`.
+- `--dry-run`: show the updated `pack.yaml` without persisting changes.
+- `--id <PROVIDER_ID>`: provider type identifier to insert or update.
+- `--kind <KIND>`: provider kind (e.g. `messaging`, `events`) used to populate `capabilities`.
+- `--title <STRING>` / `--description <STRING>`: optional metadata stored alongside the provider.
+- `--route <STRING>` / `--flow <FLOW_ID>`: convenience hints stored with the provider (useful for routing schemas).
+- `--validator-ref <REF>` / `--validator-digest <DIGEST>`: optional validator reference and digest stored with the provider for strict validation.
+
+Example:
+
+```
+greentic-pack add-extension provider --pack-dir examples/weather-demo \
+  --id messaging.dummy --kind messaging --title "Dummy Messaging Provider"
+```
+
 ### `sign`
 
 Sign a manifest with an Ed25519 private key.

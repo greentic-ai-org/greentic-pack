@@ -52,6 +52,7 @@ fn manifest_with_providers(providers: Vec<ProviderDecl>) -> PackManifest {
     PackManifest {
         schema_version: "pack-v1".into(),
         pack_id: PackId::new("demo.providers").unwrap(),
+        name: None,
         version: Version::parse("0.1.0").unwrap(),
         kind: PackKind::Application,
         publisher: "Greentic".into(),

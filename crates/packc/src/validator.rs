@@ -695,6 +695,7 @@ mod tests {
         let manifest = PackManifest {
             schema_version: "pack-v1".to_string(),
             pack_id: PackId::new("dev.local.validator").expect("pack id"),
+            name: None,
             version: component_version,
             kind: PackKind::Provider,
             publisher: "test".to_string(),

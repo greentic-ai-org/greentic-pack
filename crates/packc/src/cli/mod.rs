@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 use greentic_types::{EnvId, TenantCtx, TenantId};
 use tokio::runtime::Runtime;
 
+pub mod add_extension;
 pub mod components;
 pub mod config;
 pub mod gui;
@@ -81,6 +82,9 @@ pub enum Command {
     /// Provider extension helpers.
     #[command(subcommand)]
     Providers(self::providers::ProvidersCommand),
+    /// Add data to pack extensions.
+    #[command(subcommand)]
+    AddExtension(self::add_extension::AddExtensionCommand),
     /// Resolve component references and write pack.lock.json
     Resolve(self::resolve::ResolveArgs),
 }
@@ -190,6 +194,7 @@ pub async fn run_with_cli(cli: Cli, warn_inspect_alias: bool) -> Result<()> {
         Command::Config(args) => self::config::handle(args, cli.json, &runtime)?,
         Command::Plan(args) => self::plan::handle(&args)?,
         Command::Providers(cmd) => self::providers::run(cmd)?,
+        Command::AddExtension(cmd) => self::add_extension::handle(cmd)?,
         Command::Resolve(args) => self::resolve::handle(args, &runtime, true).await?,
     }
 
