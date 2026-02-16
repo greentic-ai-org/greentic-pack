@@ -1263,12 +1263,50 @@ fn package_gtpack(
             "application/wasm",
         );
         write_zip_entry(&mut writer, &comp.logical_path, &bytes, options)?;
+        let describe_source = PathBuf::from(format!("{}.describe.cbor", comp.source.display()));
+        if describe_source.exists() {
+            let describe_bytes = fs::read(&describe_source).with_context(|| {
+                format!(
+                    "failed to read describe cache {}",
+                    describe_source.display()
+                )
+            })?;
+            let describe_logical = format!("{}.describe.cbor", comp.logical_path);
+            if written_paths.insert(describe_logical.clone()) {
+                record_sbom_entry(
+                    &mut sbom_entries,
+                    &describe_logical,
+                    &describe_bytes,
+                    "application/cbor",
+                );
+                write_zip_entry(&mut writer, &describe_logical, &describe_bytes, options)?;
+            }
+        }
 
         if manifest_component_ids.contains(&comp.component_id) {
             let alias_path = format!("components/{}.wasm", comp.component_id);
             if written_paths.insert(alias_path.clone()) {
                 record_sbom_entry(&mut sbom_entries, &alias_path, &bytes, "application/wasm");
                 write_zip_entry(&mut writer, &alias_path, &bytes, options)?;
+            }
+            let describe_source = PathBuf::from(format!("{}.describe.cbor", comp.source.display()));
+            if describe_source.exists() {
+                let describe_bytes = fs::read(&describe_source).with_context(|| {
+                    format!(
+                        "failed to read describe cache {}",
+                        describe_source.display()
+                    )
+                })?;
+                let alias_describe = format!("{alias_path}.describe.cbor");
+                if written_paths.insert(alias_describe.clone()) {
+                    record_sbom_entry(
+                        &mut sbom_entries,
+                        &alias_describe,
+                        &describe_bytes,
+                        "application/cbor",
+                    );
+                    write_zip_entry(&mut writer, &alias_describe, &describe_bytes, options)?;
+                }
             }
         }
     }
@@ -1307,6 +1345,25 @@ fn package_gtpack(
                     "application/wasm",
                 );
                 write_zip_entry(&mut writer, &logical_wasm, &wasm_bytes, options)?;
+            }
+            let describe_source = PathBuf::from(format!("{}.describe.cbor", comp.source.display()));
+            if describe_source.exists() {
+                let describe_bytes = fs::read(&describe_source).with_context(|| {
+                    format!(
+                        "failed to read describe cache {}",
+                        describe_source.display()
+                    )
+                })?;
+                let describe_logical = format!("{logical_wasm}.describe.cbor");
+                if written_paths.insert(describe_logical.clone()) {
+                    record_sbom_entry(
+                        &mut sbom_entries,
+                        &describe_logical,
+                        &describe_bytes,
+                        "application/cbor",
+                    );
+                    write_zip_entry(&mut writer, &describe_logical, &describe_bytes, options)?;
+                }
             }
 
             if written_paths.insert(comp.manifest_path.clone()) {

@@ -53,6 +53,11 @@ struct WasmSource {
     describe_bytes: Option<Vec<u8>>,
 }
 
+struct DescribeResolution {
+    describe: ComponentDescribe,
+    requires_typed_instance: bool,
+}
+
 pub fn run_pack_lock_doctor(input: PackLockDoctorInput<'_>) -> Result<PackLockDoctorOutput> {
     let mut diagnostics: Vec<ComponentDiagnostic> = Vec::new();
     let mut has_errors = false;
@@ -165,7 +170,7 @@ pub fn run_pack_lock_doctor(input: PackLockDoctorInput<'_>) -> Result<PackLockDo
             ));
         }
 
-        let describe = match describe_component_with_cache(
+        let describe_resolution = match describe_component_with_cache(
             &engine,
             &wasm,
             input.use_describe_cache,
@@ -186,6 +191,7 @@ pub fn run_pack_lock_doctor(input: PackLockDoctorInput<'_>) -> Result<PackLockDo
                 continue;
             }
         };
+        let describe = describe_resolution.describe;
 
         if describe.info.id != locked.component_id {
             has_errors = true;
@@ -362,23 +368,41 @@ pub fn run_pack_lock_doctor(input: PackLockDoctorInput<'_>) -> Result<PackLockDo
                 continue;
             }
         };
-        let instance: ComponentV0_6 =
-            match instantiate_component_v0_6(&mut store, &component, &linker) {
-                Ok(instance) => instance,
-                Err(err) => {
-                    has_errors = true;
+        let instance: ComponentV0_6 = match instantiate_component_v0_6(
+            &mut store, &component, &linker,
+        ) {
+            Ok(instance) => instance,
+            Err(err) => {
+                if !describe_resolution.requires_typed_instance {
                     diagnostics.push(component_diag(
-                        component_id,
-                        Severity::Error,
-                        "PACK_LOCK_COMPONENT_INSTANTIATE_FAILED",
-                        format!("failed to instantiate component: {err}"),
-                        Some(format!("components/{component_id}")),
-                        Some("ensure the component exports greentic:component@0.6.0".to_string()),
-                        Value::Null,
-                    ));
+                            component_id,
+                            Severity::Warn,
+                            "PACK_LOCK_COMPONENT_WORLD_FALLBACK",
+                            format!(
+                                "typed component instantiation failed ({err}); describe was resolved via fallback and qa/i18n contract checks were skipped"
+                            ),
+                            Some(format!("components/{component_id}")),
+                            Some(
+                                "rebuild component to export greentic:component/component-v0-v6-v0@0.6.0"
+                                    .to_string(),
+                            ),
+                            Value::Null,
+                        ));
                     continue;
                 }
-            };
+                has_errors = true;
+                diagnostics.push(component_diag(
+                    component_id,
+                    Severity::Error,
+                    "PACK_LOCK_COMPONENT_INSTANTIATE_FAILED",
+                    format!("failed to instantiate component: {err}"),
+                    Some(format!("components/{component_id}")),
+                    Some("ensure the component exports greentic:component@0.6.0".to_string()),
+                    Value::Null,
+                ));
+                continue;
+            }
+        };
 
         let qa_modes = [
             (QaMode::Default, "default"),
@@ -652,22 +676,78 @@ fn describe_component_with_cache(
     wasm: &WasmSource,
     use_cache: bool,
     component_id: &str,
-) -> Result<ComponentDescribe> {
+) -> Result<DescribeResolution> {
     match describe_component(engine, &wasm.bytes) {
-        Ok(describe) => Ok(describe),
+        Ok(describe) => Ok(DescribeResolution {
+            describe,
+            requires_typed_instance: true,
+        }),
         Err(err) => {
-            if use_cache {
+            if should_fallback_to_untyped_describe(&err)
+                && let Ok(describe) = describe_component_untyped(engine, &wasm.bytes)
+            {
+                return Ok(DescribeResolution {
+                    describe,
+                    requires_typed_instance: false,
+                });
+            }
+            if use_cache || should_fallback_to_describe_cache(&err) {
                 if let Some(describe) = load_describe_from_cache(
                     wasm.describe_bytes.as_deref(),
                     wasm.source_path.as_deref(),
                 )? {
-                    return Ok(describe);
+                    return Ok(DescribeResolution {
+                        describe,
+                        requires_typed_instance: false,
+                    });
                 }
                 bail!("describe failed and no describe cache found for {component_id}: {err}");
             }
             Err(err)
         }
     }
+}
+
+fn describe_component_untyped(engine: &Engine, bytes: &[u8]) -> Result<ComponentDescribe> {
+    let component =
+        WasmtimeComponent::from_binary(engine, bytes).context("decode component bytes")?;
+    let mut store = wasmtime::Store::new(engine, DescribeHostState);
+    let mut linker = Linker::new(engine);
+    add_describe_host_imports(&mut linker)?;
+    let instance = linker
+        .instantiate(&mut store, &component)
+        .context("instantiate component root world")?;
+
+    let descriptor = [
+        "component-descriptor",
+        "greentic:component/component-descriptor",
+        "greentic:component/component-descriptor@0.6.0",
+    ]
+    .iter()
+    .find_map(|name| instance.get_export_index(&mut store, None, name))
+    .ok_or_else(|| anyhow!("missing exported descriptor instance"))?;
+    let describe_export = [
+        "describe",
+        "greentic:component/component-descriptor@0.6.0#describe",
+    ]
+    .iter()
+    .find_map(|name| instance.get_export_index(&mut store, Some(&descriptor), name))
+    .ok_or_else(|| anyhow!("missing exported describe function"))?;
+    let describe_func = instance
+        .get_typed_func::<(), (Vec<u8>,)>(&mut store, &describe_export)
+        .context("lookup component-descriptor.describe")?;
+    let (describe_bytes,) = describe_func
+        .call(&mut store, ())
+        .context("call component-descriptor.describe")?;
+    canonical::from_cbor(&describe_bytes).context("decode ComponentDescribe")
+}
+
+fn should_fallback_to_describe_cache(err: &anyhow::Error) -> bool {
+    err.to_string().contains("instantiate component-v0-v6-v0")
+}
+
+fn should_fallback_to_untyped_describe(err: &anyhow::Error) -> bool {
+    err.to_string().contains("instantiate component-v0-v6-v0")
 }
 
 fn describe_component(engine: &Engine, bytes: &[u8]) -> Result<ComponentDescribe> {
