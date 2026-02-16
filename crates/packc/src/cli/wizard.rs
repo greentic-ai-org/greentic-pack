@@ -22,6 +22,7 @@ use wasmtime::Engine;
 use wasmtime::component::{Component as WasmtimeComponent, Linker};
 use wit_component::DecodedWasm;
 
+use crate::component_host_stubs::{DescribeHostState, add_describe_host_imports};
 use crate::config::{ComponentConfig, ComponentOperationConfig, FlowKindLabel, PackConfig};
 use crate::runtime::{NetworkPolicy, RuntimeContext};
 
@@ -517,8 +518,9 @@ fn describe_component(
             return Err(err).context("decode component bytes");
         }
     };
-    let mut store = wasmtime::Store::new(engine, ());
-    let linker = Linker::new(engine);
+    let mut store = wasmtime::Store::new(engine, DescribeHostState::default());
+    let mut linker = Linker::new(engine);
+    add_describe_host_imports(&mut linker)?;
     let instance: ComponentV0_6 = instantiate_component_v0_6(&mut store, &component, &linker)
         .context("instantiate component-v0-v6-v0")?;
     let describe_bytes = match instance.describe(&mut store) {

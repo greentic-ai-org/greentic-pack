@@ -2,6 +2,7 @@
 
 pub mod build;
 pub mod cli;
+pub mod component_host_stubs;
 pub mod config;
 pub mod extensions;
 pub mod flow_resolve;
