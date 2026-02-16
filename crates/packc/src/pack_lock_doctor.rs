@@ -343,7 +343,7 @@ pub fn run_pack_lock_doctor(input: PackLockDoctorInput<'_>) -> Result<PackLockDo
             &mut has_errors,
         );
 
-        let mut store = wasmtime::Store::new(&engine, DescribeHostState::default());
+        let mut store = wasmtime::Store::new(&engine, DescribeHostState);
         let mut linker = Linker::new(&engine);
         add_describe_host_imports(&mut linker)?;
         let component = match WasmtimeComponent::from_binary(&engine, &wasm.bytes) {
@@ -673,7 +673,7 @@ fn describe_component_with_cache(
 fn describe_component(engine: &Engine, bytes: &[u8]) -> Result<ComponentDescribe> {
     let component =
         WasmtimeComponent::from_binary(engine, bytes).context("decode component bytes")?;
-    let mut store = wasmtime::Store::new(engine, DescribeHostState::default());
+    let mut store = wasmtime::Store::new(engine, DescribeHostState);
     let mut linker = Linker::new(engine);
     add_describe_host_imports(&mut linker)?;
     let instance: ComponentV0_6 = instantiate_component_v0_6(&mut store, &component, &linker)
