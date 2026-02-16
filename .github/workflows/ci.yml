@@ -105,6 +105,7 @@ jobs:
       - name: Install greentic tooling
         run: |
           set -euo pipefail
+          BINSTALL_DISABLE_STRATEGIES=compile cargo binstall cargo-component -y --force || cargo install cargo-component --locked --force
           BINSTALL_DISABLE_STRATEGIES=compile cargo binstall greentic-component -y --force
           BINSTALL_DISABLE_STRATEGIES=compile cargo binstall wasm-tools -y --force
       - run: cargo build --workspace --all-features

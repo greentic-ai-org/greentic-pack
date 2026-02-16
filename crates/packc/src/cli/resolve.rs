@@ -20,6 +20,7 @@ use tokio::runtime::Handle;
 use wasmtime::Engine;
 use wasmtime::component::{Component as WasmtimeComponent, Linker};
 
+use crate::component_host_stubs::{DescribeHostState, add_describe_host_imports};
 use crate::config::load_pack_config;
 use crate::flow_resolve::{read_flow_resolve_summary_for_flow, strip_file_uri_prefix};
 use crate::runtime::RuntimeContext;
@@ -284,8 +285,9 @@ where
 fn describe_component(engine: &Engine, bytes: &[u8]) -> Result<ComponentDescribe> {
     let component =
         WasmtimeComponent::from_binary(engine, bytes).context("decode component bytes")?;
-    let mut store = wasmtime::Store::new(engine, ());
-    let linker = Linker::new(engine);
+    let mut store = wasmtime::Store::new(engine, DescribeHostState);
+    let mut linker = Linker::new(engine);
+    add_describe_host_imports(&mut linker)?;
     let instance: ComponentV0_6 = instantiate_component_v0_6(&mut store, &component, &linker)
         .context("instantiate component-v0-v6-v0")?;
     let describe_bytes = instance.describe(&mut store).context("call describe")?;
