@@ -30,7 +30,7 @@ hex = "0.4"
 semver = { version = "1", features = ["serde"] }
 blake3 = "1"
 ciborium = "0.2"
-zip = { version = "7.0.0", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 walkdir = "2"
 thiserror = "2"
 time = { version = "0.3", features = ["macros", "serde", "formatting", "parsing"] }
@@ -65,7 +65,7 @@ assert_cmd = "2"
 indoc = "2"
 predicates = "3"
 wit-bindgen = { version = "0.52", default-features = false, features = ["macros", "realloc"] }
-indexmap = "=2.12.1"
+indexmap = "2"
 
 [patch.crates-io]
 serde_yaml_bw = { path = "crates/vendor/serde_yaml_bw" }

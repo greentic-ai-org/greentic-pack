@@ -99,7 +99,7 @@ impl QaModeLabel {
         match self {
             QaModeLabel::Default => HostQaMode::Default,
             QaModeLabel::Setup => HostQaMode::Setup,
-            QaModeLabel::Update | QaModeLabel::Upgrade => HostQaMode::Update,
+            QaModeLabel::Update | QaModeLabel::Upgrade => HostQaMode::Upgrade,
             QaModeLabel::Remove => HostQaMode::Remove,
         }
     }

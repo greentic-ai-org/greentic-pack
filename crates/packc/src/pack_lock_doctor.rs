@@ -407,7 +407,7 @@ pub fn run_pack_lock_doctor(input: PackLockDoctorInput<'_>) -> Result<PackLockDo
         let qa_modes = [
             (QaMode::Default, "default"),
             (QaMode::Setup, "setup"),
-            (QaMode::Update, "update"),
+            (QaMode::Upgrade, "update"),
             (QaMode::Remove, "remove"),
         ];
         let mut qa_i18n_keys = BTreeSet::new();
