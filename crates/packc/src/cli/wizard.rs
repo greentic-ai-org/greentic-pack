@@ -207,6 +207,7 @@ fn add_component(args: AddComponentArgs, runtime: &RuntimeContext) -> Result<()>
         allow_tags: true,
         offline: runtime.network_policy() == NetworkPolicy::Offline,
         allow_insecure_local_http: false,
+        ..DistOptions::default()
     });
     let resolved = resolve_component_bytes(&dist, runtime, &reference)?;
 

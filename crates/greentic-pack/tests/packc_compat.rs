@@ -190,6 +190,7 @@ nodes:
             "build",
             "--in",
             pack_dir.to_str().unwrap(),
+            "--allow-pack-schema",
             "--gtpack-out",
             pack_path.to_str().unwrap(),
             "--offline",

@@ -61,6 +61,7 @@ Options:
 - `--default-secret-scope <ENV/TENANT[/TEAM]>`: fill missing secret scopes.
 - `--allow-oci-tags`: allow tag-based OCI refs in extensions.
 - `--no-extra-dirs`: only include `flows/`, `components/`, and `assets/` in the archive (skip extra directories and root files).
+- `--allow-pack-schema`: migration-only escape hatch that allows deriving component manifest/schema from `pack.yaml` when component manifests are missing (default is hard-error on 0.6 path).
 
 Example:
 
@@ -127,14 +128,18 @@ Options:
 ### `qa`
 
 Run component QA specs and store answers as JSON + canonical CBOR.
+The 0.6 runner path executes: `describe -> qa-spec -> ask -> apply-answers -> strict schema validation`.
 
 ```
-greentic-pack qa --pack <DIR> --mode <default|setup|upgrade|remove> [options]
+greentic-pack qa --pack <DIR> --mode <default|setup|update|remove> [options]
 ```
 
 Options:
 - `--pack <DIR>`: pack root (default: `.`).
 - `--mode <MODE>`: QA mode to run (default: `default`).
+  - `upgrade` is accepted as a deprecated alias for `update` and prints a warning.
+  - CLI output and persisted docs always normalize this to `update`.
+  - Alias removal is planned for a future `0.6.x/0.7` release (no fixed date/version yet).
 - `--answers <FILE_OR_DIR>`: override answers location (file or directory).
 - `--locale <BCP47>`: locale tag for i18n lookup (default: `en`).
 - `--non-interactive`: disable prompts; fail if required answers missing.
@@ -156,7 +161,7 @@ using `RefPackPath`, place canonical `PackQaSpec` CBOR at:
 ```
 qa/pack/default.cbor
 qa/pack/setup.cbor
-qa/pack/upgrade.cbor
+qa/pack/update.cbor
 qa/pack/remove.cbor
 ```
 

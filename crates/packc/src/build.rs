@@ -12,6 +12,7 @@ use greentic_flow::compile_ygtc_file;
 use greentic_flow::loader::load_ygtc_from_path;
 use greentic_pack::builder::SbomEntry;
 use greentic_pack::pack_lock::read_pack_lock;
+use greentic_types::cbor::canonical;
 use greentic_types::component_source::ComponentSourceRef;
 use greentic_types::flow_resolve_summary::FlowResolveSummaryV1;
 use greentic_types::pack::extensions::component_manifests::{
@@ -78,6 +79,7 @@ pub struct BuildOptions {
     pub dev: bool,
     pub runtime: RuntimeContext,
     pub skip_update: bool,
+    pub allow_pack_schema: bool,
 }
 
 impl BuildOptions {
@@ -131,6 +133,7 @@ impl BuildOptions {
             dev: args.dev,
             runtime: runtime.clone(),
             skip_update: args.no_update,
+            allow_pack_schema: args.allow_pack_schema,
         })
     }
 }
@@ -202,6 +205,7 @@ pub async fn run(opts: &BuildOptions) -> Result<()> {
         &secret_requirements,
         !opts.no_extra_dirs,
         opts.dev,
+        opts.allow_pack_schema,
     )?;
     build.lock_components =
         collect_lock_component_artifacts(&pack_lock, &opts.runtime, opts.bundle, opts.dry_run)
@@ -335,8 +339,9 @@ fn assemble_manifest(
     secret_requirements: &[SecretRequirement],
     include_extra_dirs: bool,
     dev_mode: bool,
+    allow_pack_schema: bool,
 ) -> Result<BuildProducts> {
-    let components = build_components(&config.components)?;
+    let components = build_components(&config.components, allow_pack_schema)?;
     let (flows, flow_files) = build_flows(&config.flows, pack_root)?;
     let dependencies = build_dependencies(&config.dependencies)?;
     let assets = collect_assets(&config.assets, pack_root)?;
@@ -398,6 +403,7 @@ fn annotate_manifest_build_mode(manifest: &mut PackManifest, dev_mode: bool) {
 
 fn build_components(
     configs: &[ComponentConfig],
+    allow_pack_schema: bool,
 ) -> Result<Vec<(ComponentManifest, ComponentBinary)>> {
     let mut seen = BTreeSet::new();
     let mut result = Vec::new();
@@ -408,7 +414,7 @@ fn build_components(
         }
 
         info!(id = %cfg.id, wasm = %cfg.wasm.display(), "adding component");
-        let (manifest, binary) = resolve_component_artifacts(cfg)?;
+        let (manifest, binary) = resolve_component_artifacts(cfg, allow_pack_schema)?;
 
         result.push((manifest, binary));
     }
@@ -418,29 +424,40 @@ fn build_components(
 
 fn resolve_component_artifacts(
     cfg: &ComponentConfig,
+    allow_pack_schema: bool,
 ) -> Result<(ComponentManifest, ComponentBinary)> {
     let resolved_wasm = resolve_component_wasm_path(&cfg.wasm)?;
 
-    let mut manifest =
-        if let Some(from_disk) = load_component_manifest_from_disk(&resolved_wasm, &cfg.id)? {
-            if from_disk.id.to_string() != cfg.id {
-                anyhow::bail!(
-                    "component manifest id {} does not match pack.yaml id {}",
-                    from_disk.id,
-                    cfg.id
-                );
-            }
-            if from_disk.version.to_string() != cfg.version {
-                anyhow::bail!(
-                    "component manifest version {} does not match pack.yaml version {}",
-                    from_disk.version,
-                    cfg.version
-                );
-            }
-            from_disk
-        } else {
-            manifest_from_config(cfg)?
-        };
+    let mut manifest = if let Some(from_disk) =
+        load_component_manifest_from_disk(&resolved_wasm, &cfg.id)?
+    {
+        if from_disk.id.to_string() != cfg.id {
+            anyhow::bail!(
+                "component manifest id {} does not match pack.yaml id {}",
+                from_disk.id,
+                cfg.id
+            );
+        }
+        if from_disk.version.to_string() != cfg.version {
+            anyhow::bail!(
+                "component manifest version {} does not match pack.yaml version {}",
+                from_disk.version,
+                cfg.version
+            );
+        }
+        from_disk
+    } else if allow_pack_schema {
+        warn!(
+            id = %cfg.id,
+            "migration-only path enabled: deriving component manifest/schema from pack.yaml (--allow-pack-schema)"
+        );
+        manifest_from_config(cfg)?
+    } else {
+        anyhow::bail!(
+            "component {} is missing component.manifest.json; refusing to derive schema from pack.yaml on 0.6 path (migration-only override: --allow-pack-schema)",
+            cfg.id
+        );
+    };
 
     // Ensure operations are populated from pack.yaml when missing in the on-disk manifest.
     if manifest.operations.is_empty() && !cfg.operations.is_empty() {
@@ -451,8 +468,8 @@ fn resolve_component_artifacts(
             .collect::<Result<Vec<_>>>()?;
     }
 
-    let manifest_bytes =
-        serde_cbor::to_vec(&manifest).context("encode component manifest to cbor")?;
+    let manifest_bytes = canonical::to_canonical_cbor_allow_floats(&manifest)
+        .context("encode component manifest to canonical cbor")?;
     let mut sha = Sha256::new();
     sha.update(&manifest_bytes);
     let manifest_hash_sha256 = format!("sha256:{:x}", sha.finalize());
@@ -1417,7 +1434,8 @@ fn package_gtpack(
         format: SBOM_FORMAT.to_string(),
         files: sbom_entries,
     };
-    let sbom_bytes = serde_cbor::to_vec(&sbom_doc).context("failed to encode sbom.cbor")?;
+    let sbom_bytes = canonical::to_canonical_cbor_allow_floats(&sbom_doc)
+        .context("failed to encode canonical sbom.cbor")?;
     write_zip_entry(&mut writer, "sbom.cbor", &sbom_bytes, options)?;
 
     writer
@@ -1437,6 +1455,7 @@ async fn collect_lock_component_artifacts(
         allow_tags: true,
         offline: runtime.network_policy() == NetworkPolicy::Offline,
         allow_insecure_local_http: false,
+        ..DistOptions::default()
     });
 
     let mut artifacts = Vec::new();
@@ -1789,8 +1808,8 @@ fn load_component_manifest_from_file(path: &Path) -> Result<ComponentManifest> {
 fn component_manifest_file_from_manifest(
     manifest: &ComponentManifest,
 ) -> Result<ComponentManifestFile> {
-    let manifest_bytes =
-        serde_cbor::to_vec(manifest).context("encode component manifest to cbor")?;
+    let manifest_bytes = canonical::to_canonical_cbor_allow_floats(manifest)
+        .context("encode component manifest to canonical cbor")?;
     let mut sha = Sha256::new();
     sha.update(&manifest_bytes);
     let manifest_hash_sha256 = format!("sha256:{:x}", sha.finalize());
@@ -2181,6 +2200,38 @@ mod tests {
             load_component_manifest_from_disk(&wasm, "component").expect("load manifest");
         let manifest = manifest.expect("manifest present");
         assert_eq!(manifest.id.to_string(), "component");
+    }
+
+    #[test]
+    fn resolve_component_artifacts_requires_manifest_unless_migration_flag_set() {
+        let temp = tempdir().expect("temp dir");
+        let wasm = temp.path().join("component.wasm");
+        fs::write(&wasm, [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]).expect("write wasm");
+
+        let cfg: ComponentConfig = serde_json::from_value(json!({
+            "id": "demo.component",
+            "version": "0.1.0",
+            "world": "greentic:component/component@0.6.0",
+            "supports": [],
+            "profiles": { "default": "stateless", "supported": ["stateless"] },
+            "capabilities": { "wasi": {}, "host": {} },
+            "operations": [],
+            "wasm": wasm.to_string_lossy()
+        }))
+        .expect("component config");
+
+        let err = match resolve_component_artifacts(&cfg, false) {
+            Ok(_) => panic!("missing manifest must fail"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains("missing component.manifest.json"),
+            "unexpected error: {err}"
+        );
+
+        let (manifest, _binary) =
+            resolve_component_artifacts(&cfg, true).expect("migration flag allows fallback");
+        assert_eq!(manifest.id.to_string(), "demo.component");
     }
 
     #[test]
@@ -2843,6 +2894,7 @@ flows:
                 dev: false,
                 runtime,
                 skip_update: false,
+                allow_pack_schema: true,
             };
 
             run(&opts).await.expect("build");
@@ -2965,6 +3017,7 @@ flows:
                 dev: false,
                 runtime,
                 skip_update: false,
+                allow_pack_schema: true,
             };
 
             run(&opts).await.expect("build");

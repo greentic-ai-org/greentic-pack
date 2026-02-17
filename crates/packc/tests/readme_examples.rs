@@ -134,6 +134,7 @@ fn readme_demo_build_and_doctor() {
         "build",
         "--in",
         "examples/weather-demo",
+        "--allow-pack-schema",
         "--offline",
         "--cache-dir",
         cache_dir.path().to_str().unwrap(),

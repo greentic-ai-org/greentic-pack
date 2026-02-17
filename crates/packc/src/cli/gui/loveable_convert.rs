@@ -215,6 +215,7 @@ pub async fn handle(
         dev: false,
         runtime: runtime.clone(),
         skip_update: false,
+        allow_pack_schema: false,
     };
     build::run(&build_opts).await?;
 

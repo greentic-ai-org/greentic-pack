@@ -9,6 +9,7 @@ use greentic_pack::builder::{ComponentDescriptor, DistributionSection, PACK_VERS
 use greentic_pack::events::EventsSection;
 use greentic_pack::messaging::MessagingSection;
 use greentic_pack::repo::{InterfaceBinding, RepoPackSection};
+use greentic_types::cbor::canonical;
 use greentic_types::{Signature as SharedSignature, SignatureAlgorithm};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -395,7 +396,7 @@ pub fn build_manifest(
 }
 
 pub fn encode_manifest(manifest: &PackManifest) -> Result<Vec<u8>> {
-    Ok(serde_cbor::to_vec(manifest)?)
+    canonical::to_canonical_cbor_allow_floats(manifest).map_err(Into::into)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

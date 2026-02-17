@@ -139,6 +139,7 @@ fn plan_outputs_json_for_gtpack() {
             "build",
             "--in",
             "examples/weather-demo",
+            "--allow-pack-schema",
             "--no-update",
             "--offline",
             "--cache-dir",

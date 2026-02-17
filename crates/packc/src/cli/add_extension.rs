@@ -67,6 +67,9 @@ pub fn handle(command: AddExtensionCommand) -> Result<()> {
 }
 
 fn handle_provider(args: ProviderArgs) -> Result<()> {
+    eprintln!(
+        "note: provider extension updates use the legacy schema-core path (`greentic:provider/schema-core@1.0.0`)"
+    );
     edit_pack_dir(&args.pack_dir, &args)?;
     Ok(())
 }

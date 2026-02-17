@@ -291,6 +291,7 @@ fn build_all_examples_manifest_only() {
             "build",
             "--in",
             pack,
+            "--allow-pack-schema",
             "--dry-run",
             "--offline",
             "--cache-dir",

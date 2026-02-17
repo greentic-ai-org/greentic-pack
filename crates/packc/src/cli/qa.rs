@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, ValueEnum};
 use greentic_distributor_client::{DistClient, DistOptions};
+use greentic_flow::schema_validate::{Severity, validate_value_against_schema};
 use greentic_interfaces_host::component_v0_6::{
     ComponentV0_6, exports::greentic::component::component_qa::QaMode as HostQaMode,
     instantiate_component_v0_6,
@@ -16,6 +17,7 @@ use greentic_pack::pack_lock::read_pack_lock;
 use greentic_types::cbor::canonical;
 use greentic_types::i18n_text::I18nText;
 use greentic_types::qa::QaSpecSource;
+use greentic_types::schemas::component::v0_6_0::ComponentDescribe;
 use greentic_types::schemas::component::v0_6_0::qa::{
     ComponentQaSpec, QaMode as SpecQaMode, Question, QuestionKind,
 };
@@ -77,6 +79,8 @@ pub struct QaArgs {
 pub enum QaModeLabel {
     Default,
     Setup,
+    Update,
+    #[value(hide = true)]
     Upgrade,
     Remove,
 }
@@ -86,7 +90,7 @@ impl QaModeLabel {
         match self {
             QaModeLabel::Default => "default",
             QaModeLabel::Setup => "setup",
-            QaModeLabel::Upgrade => "upgrade",
+            QaModeLabel::Update | QaModeLabel::Upgrade => "update",
             QaModeLabel::Remove => "remove",
         }
     }
@@ -95,7 +99,7 @@ impl QaModeLabel {
         match self {
             QaModeLabel::Default => HostQaMode::Default,
             QaModeLabel::Setup => HostQaMode::Setup,
-            QaModeLabel::Upgrade => HostQaMode::Upgrade,
+            QaModeLabel::Update | QaModeLabel::Upgrade => HostQaMode::Update,
             QaModeLabel::Remove => HostQaMode::Remove,
         }
     }
@@ -104,7 +108,7 @@ impl QaModeLabel {
         match self {
             QaModeLabel::Default => SpecQaMode::Default,
             QaModeLabel::Setup => SpecQaMode::Setup,
-            QaModeLabel::Upgrade => SpecQaMode::Upgrade,
+            QaModeLabel::Update | QaModeLabel::Upgrade => SpecQaMode::Update,
             QaModeLabel::Remove => SpecQaMode::Remove,
         }
     }
@@ -113,10 +117,17 @@ impl QaModeLabel {
         match self {
             QaModeLabel::Default => PackQaMode::Default,
             QaModeLabel::Setup => PackQaMode::Setup,
-            QaModeLabel::Upgrade => PackQaMode::Upgrade,
+            QaModeLabel::Update | QaModeLabel::Upgrade => PackQaMode::Update,
             QaModeLabel::Remove => PackQaMode::Remove,
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+struct ValidationViolation<'a> {
+    code: &'a str,
+    path: &'a str,
+    message: &'a str,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -140,6 +151,11 @@ impl AnswersDoc {
 }
 
 pub fn handle(args: QaArgs, runtime: &RuntimeContext) -> Result<()> {
+    if matches!(args.mode, QaModeLabel::Upgrade) {
+        eprintln!(
+            "warning: --mode upgrade is deprecated; use --mode update (alias retained for compatibility)"
+        );
+    }
     let pack_dir = args
         .pack_dir
         .canonicalize()
@@ -173,6 +189,7 @@ pub fn handle(args: QaArgs, runtime: &RuntimeContext) -> Result<()> {
         allow_tags: true,
         offline: runtime.network_policy() == NetworkPolicy::Offline,
         allow_insecure_local_http: false,
+        ..DistOptions::default()
     });
 
     let wasm_paths = index_component_paths(&config, &pack_dir);
@@ -247,6 +264,27 @@ pub fn handle(args: QaArgs, runtime: &RuntimeContext) -> Result<()> {
             args.reask,
         )?;
         answers.components.insert(component_id.clone(), updated);
+
+        let describe = load_component_describe(&engine, &resolved.bytes)
+            .with_context(|| format!("load describe for {}", component_id))?;
+        let component_answers = answers
+            .components
+            .get(&component_id)
+            .cloned()
+            .unwrap_or_default();
+        let answers_cbor = canonical::to_canonical_cbor_allow_floats(&component_answers)
+            .with_context(|| format!("encode answers cbor for {}", component_id))?;
+        let current_config = canonical::to_canonical_cbor_allow_floats(&serde_json::json!({}))
+            .context("encode empty config cbor")?;
+        let config_cbor = apply_component_answers(
+            &engine,
+            &resolved.bytes,
+            args.mode.to_host_mode(),
+            &current_config,
+            &answers_cbor,
+        )
+        .with_context(|| format!("apply-answers for {}", component_id))?;
+        validate_component_config_output(&component_id, &describe, &config_cbor)?;
     }
 
     write_answers(&answers_json_path, &answers_cbor_path, &answers)?;
@@ -940,12 +978,85 @@ fn load_component_qa_spec(
     canonical::from_cbor(&qa_bytes).context("decode ComponentQaSpec")
 }
 
+fn load_component_describe(engine: &Engine, bytes: &[u8]) -> Result<ComponentDescribe> {
+    let component =
+        WasmtimeComponent::from_binary(engine, bytes).context("decode component bytes")?;
+    let mut store = wasmtime::Store::new(engine, DescribeHostState);
+    let mut linker = Linker::new(engine);
+    add_describe_host_imports(&mut linker)?;
+    let instance: ComponentV0_6 = instantiate_component_v0_6(&mut store, &component, &linker)
+        .context("instantiate component-v0-v6-v0")?;
+    let describe_bytes = instance.describe(&mut store).context("call describe")?;
+    canonical::from_cbor(&describe_bytes).context("decode ComponentDescribe")
+}
+
+fn apply_component_answers(
+    engine: &Engine,
+    bytes: &[u8],
+    mode: HostQaMode,
+    current_config: &[u8],
+    answers: &[u8],
+) -> Result<Vec<u8>> {
+    let component =
+        WasmtimeComponent::from_binary(engine, bytes).context("decode component bytes")?;
+    let mut store = wasmtime::Store::new(engine, DescribeHostState);
+    let mut linker = Linker::new(engine);
+    add_describe_host_imports(&mut linker)?;
+    let instance: ComponentV0_6 = instantiate_component_v0_6(&mut store, &component, &linker)
+        .context("instantiate component-v0-v6-v0")?;
+    instance
+        .apply_answers(&mut store, mode, current_config, answers)
+        .context("call apply_answers")
+}
+
+fn validate_component_config_output(
+    component_id: &str,
+    describe: &ComponentDescribe,
+    config_cbor: &[u8],
+) -> Result<()> {
+    let value: ciborium::value::Value =
+        ciborium::de::from_reader(config_cbor).context("decode apply-answers output as CBOR")?;
+    let diags = validate_value_against_schema(&describe.config_schema, &value);
+    let errors: Vec<_> = diags
+        .iter()
+        .filter(|diag| diag.severity == Severity::Error)
+        .collect();
+    if errors.is_empty() {
+        return Ok(());
+    }
+
+    let violations: Vec<_> = errors
+        .iter()
+        .map(|diag| ValidationViolation {
+            code: diag.code,
+            path: diag.path.as_str(),
+            message: diag.message.as_str(),
+        })
+        .collect();
+    let structured = serde_json::to_string_pretty(&violations).unwrap_or_else(|_| "[]".to_string());
+    let summary = errors
+        .iter()
+        .map(|diag| format!("{}: {}", diag.path, diag.message))
+        .collect::<Vec<_>>()
+        .join("; ");
+    bail!(
+        "component {} apply-answers output failed strict schema validation ({} violations): {}\nviolations_json={}",
+        component_id,
+        errors.len(),
+        summary,
+        structured
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::{ComponentConfig, FlowKindLabel};
+    use clap::ValueEnum;
     use greentic_pack::pack_lock::PackLockV1;
     use greentic_types::cbor_bytes::CborBytes;
+    use greentic_types::schemas::common::schema_ir::{AdditionalProperties, SchemaIr};
+    use greentic_types::schemas::component::v0_6_0::ComponentInfo;
     use greentic_types::{ComponentCapabilities, ComponentProfiles};
     use tempfile::TempDir;
 
@@ -1108,5 +1219,46 @@ mod tests {
             .expect("load")
             .expect("spec");
         assert_eq!(loaded.mode, PackQaMode::Default);
+    }
+
+    #[test]
+    fn qa_mode_upgrade_alias_normalizes_to_update() {
+        let update = QaModeLabel::from_str("update", false).expect("parse update");
+        let upgrade = QaModeLabel::from_str("upgrade", false).expect("parse upgrade");
+        assert_eq!(update.as_str(), "update");
+        assert_eq!(upgrade.as_str(), "update");
+        assert_eq!(update.to_spec_mode(), SpecQaMode::Update);
+        assert_eq!(upgrade.to_spec_mode(), SpecQaMode::Update);
+    }
+
+    #[test]
+    fn validation_error_includes_paths_and_structured_violations() {
+        let describe = ComponentDescribe {
+            info: ComponentInfo {
+                id: "demo.component".to_string(),
+                version: "0.1.0".to_string(),
+                role: "tool".to_string(),
+                display_name: None,
+            },
+            provided_capabilities: Vec::new(),
+            required_capabilities: Vec::new(),
+            metadata: BTreeMap::new(),
+            operations: Vec::new(),
+            config_schema: SchemaIr::Object {
+                properties: BTreeMap::from([("enabled".to_string(), SchemaIr::Bool)]),
+                required: vec!["enabled".to_string()],
+                additional: AdditionalProperties::Forbid,
+            },
+        };
+        let config_cbor = canonical::to_canonical_cbor_allow_floats(&serde_json::json!({}))
+            .expect("encode config");
+        let err = validate_component_config_output("demo.component", &describe, &config_cbor)
+            .expect_err("missing required field must fail");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("$.enabled"), "missing path in: {msg}");
+        assert!(
+            msg.contains("violations_json"),
+            "missing structured payload in: {msg}"
+        );
     }
 }

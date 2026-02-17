@@ -290,6 +290,7 @@ flows: []
             "build",
             "--in",
             pack_dir.to_str().unwrap(),
+            "--allow-pack-schema",
             "--gtpack-out",
             gtpack_out.to_str().unwrap(),
             "--log",
@@ -446,6 +447,7 @@ flows:
             "build",
             "--in",
             pack_dir.to_str().unwrap(),
+            "--allow-pack-schema",
             "--manifest",
             manifest_out.to_str().unwrap(),
             "--gtpack-out",
@@ -519,6 +521,7 @@ flows: []
             "--in",
             pack_dir.to_str().unwrap(),
             "--no-update",
+            "--allow-pack-schema",
             "--log",
             "warn",
         ])

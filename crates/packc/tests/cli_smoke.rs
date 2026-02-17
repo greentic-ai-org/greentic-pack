@@ -138,6 +138,7 @@ fn cli_build_smoke() {
             "build",
             "--in",
             pack_dir.to_str().expect("pack dir"),
+            "--allow-pack-schema",
             "--manifest",
             manifest_out.to_str().expect("manifest path"),
             "--gtpack-out",

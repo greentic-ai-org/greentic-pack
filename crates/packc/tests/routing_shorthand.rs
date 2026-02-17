@@ -160,6 +160,7 @@ nodes:
             "build",
             "--in",
             pack_root.to_str().unwrap(),
+            "--allow-pack-schema",
             "--manifest",
             manifest_path.to_str().unwrap(),
             "--log",

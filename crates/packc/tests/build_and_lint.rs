@@ -118,6 +118,7 @@ fn build_weather_demo_dry_run() {
         "build",
         "--in",
         "examples/weather-demo",
+        "--allow-pack-schema",
         "--dry-run",
         "--log",
         "warn",

@@ -632,6 +632,7 @@ async fn load_validator_components_from_oci(
         allow_tags: true,
         offline: runtime.network_policy() == NetworkPolicy::Offline,
         allow_insecure_local_http: false,
+        ..DistOptions::default()
     });
 
     let resolved = if runtime.network_policy() == NetworkPolicy::Offline {

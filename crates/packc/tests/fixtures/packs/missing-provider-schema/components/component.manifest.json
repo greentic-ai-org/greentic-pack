@@ -1,0 +1,19 @@
+{
+  "id": "dev.local.component",
+  "version": "0.1.0",
+  "supports": [],
+  "world": "greentic:component/component@0.5.0",
+  "profiles": {
+    "default": "stateless",
+    "supported": [
+      "stateless"
+    ]
+  },
+  "capabilities": {
+    "wasi": {},
+    "host": {}
+  },
+  "operations": [],
+  "resources": {},
+  "dev_flows": {}
+}

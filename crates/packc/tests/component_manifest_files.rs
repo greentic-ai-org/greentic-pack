@@ -183,6 +183,7 @@ fn component_manifests_are_embedded_and_indexed() {
             "build",
             "--in",
             temp.path().to_str().unwrap(),
+            "--allow-pack-schema",
             "--manifest",
             manifest_out.to_str().unwrap(),
             "--gtpack-out",

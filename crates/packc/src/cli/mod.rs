@@ -86,10 +86,10 @@ pub enum Command {
     Config(self::config::ConfigArgs),
     /// Generate a DeploymentPlan from a pack archive or source directory.
     Plan(self::plan::PlanArgs),
-    /// Provider extension helpers.
+    /// Legacy provider-extension helpers (schema-core path).
     #[command(subcommand)]
     Providers(self::providers::ProvidersCommand),
-    /// Add data to pack extensions.
+    /// Add data to pack extensions (provider extension path is legacy/schema-core).
     #[command(subcommand)]
     AddExtension(self::add_extension::AddExtensionCommand),
     /// Pack wizard helpers.
@@ -160,6 +160,10 @@ pub struct BuildArgs {
     /// Include source files (pack.yaml, flows) inside the generated .gtpack for debugging
     #[arg(long = "dev", default_value_t = false)]
     pub dev: bool,
+
+    /// Migration-only escape hatch: allow deriving component manifest/schema from pack.yaml.
+    #[arg(long = "allow-pack-schema", default_value_t = false)]
+    pub allow_pack_schema: bool,
 }
 
 pub fn run() -> Result<()> {

@@ -222,6 +222,7 @@ fn build_pack(pack_dir: &Path, gtpack_name: &str) -> (PathBuf, PathBuf) {
         "build",
         "--in",
         pack_dir.to_str().unwrap(),
+        "--allow-pack-schema",
         "--gtpack-out",
         gtpack_out.to_str().unwrap(),
         "--manifest",

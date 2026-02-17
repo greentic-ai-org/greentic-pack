@@ -1,5 +1,10 @@
 # Provider extension validation
 
+This document describes the legacy/provider-extension path. The default
+component 0.6 QA runner path does not depend on `schema-core`.
+Use legacy provider commands (`greentic-pack add-extension provider`, `greentic-pack providers ...`)
+for this track; do not route 0.6 QA runner flows through this schema-core world.
+
 `packc` supports generic pack extensions via `PackManifest.extensions`. The known provider extension is keyed by `greentic.ext.provider`.
 
 ## Inline shape
@@ -30,7 +35,7 @@ Validation checks that:
 
 - `inline.providers` exists and is non-empty.
 - Each provider includes the required fields above.
-- `runtime.world` must equal `greentic:provider/schema-core@1.0.0`.
+- `runtime.world` must equal `greentic:provider/schema-core@1.0.0` (legacy provider-extension path).
 
 Other extension kinds are accepted without additional shape validation.
 

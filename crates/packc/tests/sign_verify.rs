@@ -134,6 +134,7 @@ fn sign_and_verify_manifest() {
         "build",
         "--in",
         "examples/weather-demo",
+        "--allow-pack-schema",
         "--manifest",
         manifest_out.to_str().unwrap(),
         "--offline",

@@ -10,6 +10,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use blake3::Hasher;
 use ed25519_dalek::Signer as _;
 use ed25519_dalek::SigningKey;
+use greentic_types::cbor::canonical;
 use pkcs8::EncodePrivateKey;
 use rand_core_06::OsRng;
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ED25519};
@@ -678,13 +679,7 @@ fn validate_identifier(value: &str, label: &str) -> Result<()> {
 }
 
 fn encode_manifest_cbor(manifest: &PackManifest) -> Result<Vec<u8>> {
-    let mut buffer = Vec::new();
-    {
-        let mut serializer = serde_cbor::ser::Serializer::new(&mut buffer);
-        serializer.self_describe()?;
-        manifest.serialize(&mut serializer)?;
-    }
-    Ok(buffer)
+    canonical::to_canonical_cbor_allow_floats(manifest).map_err(Into::into)
 }
 
 fn validate_digest(digest: &str) -> Result<()> {

@@ -143,6 +143,7 @@ fn build_writes_all_outputs_offline_with_cache_dir() {
         "build",
         "--in",
         pack_dir.to_str().unwrap(),
+        "--allow-pack-schema",
         "--out",
         out_wasm.to_str().unwrap(),
         "--manifest",

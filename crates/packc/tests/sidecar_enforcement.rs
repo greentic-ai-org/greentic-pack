@@ -159,6 +159,7 @@ flows:
             "build",
             "--in",
             pack_dir.to_str().unwrap(),
+            "--allow-pack-schema",
             "--no-update",
             "--gtpack-out",
             pack_dir.join("dist/pack.gtpack").to_str().unwrap(),

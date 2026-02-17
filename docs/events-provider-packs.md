@@ -2,6 +2,11 @@
 
 Packs can describe providers so runtimes can discover brokers/sources/sinks/bridges without hard-coding transports. The provider extension lives under `extensions.greentic.provider-extension.v1` in `pack.yaml` and is optional/compatible with existing packs.
 
+This is a legacy/provider-extension track. The default component 0.6 QA runner
+path does not depend on `schema-core`.
+Manage this track via legacy provider commands (`greentic-pack add-extension provider`,
+`greentic-pack providers ...`), not via the default 0.6 QA runner path.
+
 ## Schema
 
 ```yaml

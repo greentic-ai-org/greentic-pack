@@ -304,7 +304,7 @@ fn run_flow_doctors(
                     message: "greentic-flow does not support --stdin; skipping flow doctor checks"
                         .to_string(),
                     path: None,
-                    hint: Some("upgrade greentic-flow or pass --no-flow-doctor".to_string()),
+                    hint: Some("update greentic-flow or pass --no-flow-doctor".to_string()),
                     data: json_diagnostic_data(&output),
                 });
                 return Ok(false);
@@ -634,6 +634,7 @@ async fn inspect_source_dir(
         dev: true,
         runtime: runtime.clone(),
         skip_update: false,
+        allow_pack_schema: false,
     };
 
     build::run(&opts).await?;

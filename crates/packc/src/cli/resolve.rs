@@ -226,6 +226,7 @@ impl PackResolver {
             allow_tags: true,
             offline: runtime.network_policy() == crate::runtime::NetworkPolicy::Offline,
             allow_insecure_local_http: false,
+            ..DistOptions::default()
         });
         Ok(Self {
             runtime: runtime.clone(),

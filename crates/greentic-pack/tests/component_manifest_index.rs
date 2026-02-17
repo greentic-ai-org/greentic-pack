@@ -182,6 +182,7 @@ fn build_pack_with_packc() -> (TempDir, PathBuf, greentic_pack::reader::PackLoad
             "build",
             "--in",
             temp.path().to_str().unwrap(),
+            "--allow-pack-schema",
             "--manifest",
             manifest_out.to_str().unwrap(),
             "--gtpack-out",

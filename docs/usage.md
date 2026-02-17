@@ -363,11 +363,16 @@ Recommended pack path convention:
 ```
 qa/pack/default.cbor
 qa/pack/setup.cbor
-qa/pack/upgrade.cbor
+qa/pack/update.cbor
 qa/pack/remove.cbor
 ```
 
 Each file contains canonical CBOR for `PackQaSpec`.
+
+For component QA on the 0.6 path, `greentic-pack qa` runs:
+`describe -> qa-spec -> ask -> apply-answers -> strict validation against describe.config_schema`.
+`upgrade` remains a deprecated alias for `update` in CLI input; output normalizes to `update`.
+Alias removal is planned for a future `0.6.x/0.7` release (no fixed date/version yet).
 
 ## CI tips
 
@@ -384,3 +389,6 @@ Each file contains canonical CBOR for `PackQaSpec`.
 | `Rust target 'wasm32-wasip2' is not installed` | Run `rustup target add wasm32-wasip2` once before building without `--dry-run`. |
 | CLI fails with duplicate flow/template IDs | Ensure each entry in `flow_files` and `template_dirs` maps to unique logical paths. |
 | Missing MCP tool at runtime | Confirm the host has loaded the proper MCP component; packs should never embed the tool implementation. |
+| `schema_hash mismatch` / contract drift | Re-resolve component metadata (`greentic-pack resolve`) and verify component describe payloads match the expected operation/schema pair. |
+| `apply-answers output failed strict schema validation` | Fix answers or component QA logic so returned config matches `describe.config_schema`; errors include field paths and aggregated violations. |
+| Capability denied at runtime | Capability enforcement is owned by runtime/operator layers; ensure granted host profile matches component requirements. |

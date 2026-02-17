@@ -407,7 +407,7 @@ pub fn run_pack_lock_doctor(input: PackLockDoctorInput<'_>) -> Result<PackLockDo
         let qa_modes = [
             (QaMode::Default, "default"),
             (QaMode::Setup, "setup"),
-            (QaMode::Upgrade, "upgrade"),
+            (QaMode::Update, "update"),
             (QaMode::Remove, "remove"),
         ];
         let mut qa_i18n_keys = BTreeSet::new();
@@ -643,6 +643,7 @@ fn resolve_component_wasm(
         allow_tags: input.allow_oci_tags,
         offline,
         allow_insecure_local_http: false,
+        ..DistOptions::default()
     });
 
     let handle = Handle::try_current().context("component resolution requires a Tokio runtime")?;
