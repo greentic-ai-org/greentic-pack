@@ -65,7 +65,7 @@ flows:
 fn build_wasip2_noop_component_v06(target_dir: &Path) -> PathBuf {
     let fixture_dir =
         workspace_root().join("crates/packc/tests/fixtures/components/noop-component-v06-src");
-    let output = Command::new("cargo")
+    let offline_output = Command::new("cargo")
         .current_dir(&fixture_dir)
         .env("CARGO_TARGET_DIR", target_dir)
         .args([
@@ -77,12 +77,34 @@ fn build_wasip2_noop_component_v06(target_dir: &Path) -> PathBuf {
         ])
         .output()
         .expect("spawn cargo build for noop component fixture");
-    assert!(
-        output.status.success(),
-        "failed to build noop component fixture:\nstdout={}\nstderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    if !offline_output.status.success() {
+        let offline_stderr = String::from_utf8_lossy(&offline_output.stderr);
+        let cache_miss_offline = offline_stderr.contains("attempting to make an HTTP request")
+            || offline_stderr.contains("failed to download");
+        if cache_miss_offline {
+            let online_output = Command::new("cargo")
+                .current_dir(&fixture_dir)
+                .env("CARGO_TARGET_DIR", target_dir)
+                .args(["build", "--target", "wasm32-wasip2", "--release"])
+                .output()
+                .expect("spawn online cargo build for noop component fixture");
+            assert!(
+                online_output.status.success(),
+                "failed to build noop component fixture (offline then online fallback):\noffline stdout={}\noffline stderr={}\nonline stdout={}\nonline stderr={}",
+                String::from_utf8_lossy(&offline_output.stdout),
+                offline_stderr,
+                String::from_utf8_lossy(&online_output.stdout),
+                String::from_utf8_lossy(&online_output.stderr)
+            );
+        } else {
+            assert!(
+                offline_output.status.success(),
+                "failed to build noop component fixture:\nstdout={}\nstderr={}",
+                String::from_utf8_lossy(&offline_output.stdout),
+                offline_stderr
+            );
+        }
+    }
     target_dir
         .join("wasm32-wasip2")
         .join("release")
