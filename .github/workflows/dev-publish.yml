@@ -71,7 +71,7 @@ jobs:
           targets: ${{ matrix.target }}
       
       - name: Build release binary
-        run: cargo build --locked --release --target ${{ matrix.target }} --package greentic-pack
+        run: cargo build --release --target ${{ matrix.target }} --package greentic-pack
 
       - name: Package
         id: package
