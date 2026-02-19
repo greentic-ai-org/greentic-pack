@@ -84,6 +84,13 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -euo pipefail
+          echo "Debug: Checking OPENAI_API_KEY"
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "Error: OPENAI_API_KEY is empty"
+          else
+            echo "OPENAI_API_KEY is set. Length: ${#OPENAI_API_KEY}"
+            echo "Prefix: ${OPENAI_API_KEY:0:12}..."
+          fi
           codex exec --full-auto "$(cat codex-prompt.txt)"
 
       - name: Commit and push fixes
