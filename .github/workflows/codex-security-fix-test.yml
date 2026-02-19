@@ -91,6 +91,16 @@ jobs:
             echo "OPENAI_API_KEY is set. Length: ${#OPENAI_API_KEY}"
             echo "Prefix: ${OPENAI_API_KEY:0:12}..."
           fi
+          
+          echo "Debug: Testing API key validity..."
+          if curl -s -f -o /dev/null -H "Authorization: Bearer $OPENAI_API_KEY" https://api.openai.com/v1/models; then
+             echo "Debug: API key is VALID (models endpoint accessible)"
+          else
+             echo "Debug: API key is INVALID or REVOKED (curl failed)"
+             # Print response body for more details (be careful not to leak key if it was in header, but here we just show body)
+             curl -s -H "Authorization: Bearer $OPENAI_API_KEY" https://api.openai.com/v1/models || true
+          fi
+
           codex exec --full-auto "$(cat codex-prompt.txt)"
 
       - name: Commit and push fixes
