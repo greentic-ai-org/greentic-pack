@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
 use greentic_distributor_client::{DistClient, DistOptions};
-use greentic_interfaces_host::component_v0_6::{ComponentV0_6, instantiate_component_v0_6};
+use greentic_interfaces_host::component_v0_6::instantiate_component_v0_6;
 use greentic_pack::pack_lock::{LockedComponent, PackLockV1, write_pack_lock};
 use greentic_pack::resolver::{ComponentResolver, ResolveReq, ResolvedComponent};
 use greentic_types::cbor::canonical;
@@ -150,6 +150,16 @@ async fn populate_component_contract(
     resolver: &dyn ComponentResolver,
     component: &mut LockedComponent,
 ) -> Result<()> {
+    if is_builtin_component(component.component_id.as_str()) {
+        component.describe_hash = "0".repeat(64);
+        component.operations.clear();
+        component.role = Some("builtin".to_string());
+        if component.component_version.is_none() {
+            component.component_version = Some("0.0.0".to_string());
+        }
+        return Ok(());
+    }
+
     let reference = component
         .r#ref
         .as_ref()
@@ -212,6 +222,13 @@ async fn populate_component_contract(
     component.role = Some(describe.info.role);
     component.component_version = Some(describe.info.version);
     Ok(())
+}
+
+fn is_builtin_component(component_id: &str) -> bool {
+    matches!(
+        component_id,
+        "session.wait" | "flow.call" | "provider.invoke"
+    ) || component_id.starts_with("emit.")
 }
 
 struct PackResolver {
@@ -289,10 +306,57 @@ fn describe_component(engine: &Engine, bytes: &[u8]) -> Result<ComponentDescribe
     let mut store = wasmtime::Store::new(engine, DescribeHostState::default());
     let mut linker = Linker::new(engine);
     add_describe_host_imports(&mut linker)?;
-    let instance: ComponentV0_6 = instantiate_component_v0_6(&mut store, &component, &linker)
-        .context("instantiate component-v0-v6-v0")?;
-    let describe_bytes = instance.describe(&mut store).context("call describe")?;
+    match instantiate_component_v0_6(&mut store, &component, &linker) {
+        Ok(instance) => {
+            let describe_bytes = instance.describe(&mut store).context("call describe")?;
+            canonical::from_cbor(&describe_bytes).context("decode ComponentDescribe")
+        }
+        Err(err) => {
+            let wrapped = err.context("instantiate component-v0-v6-v0");
+            if should_fallback_to_untyped_describe(&wrapped) {
+                return describe_component_untyped(engine, bytes);
+            }
+            Err(wrapped)
+        }
+    }
+}
+
+fn describe_component_untyped(engine: &Engine, bytes: &[u8]) -> Result<ComponentDescribe> {
+    let component =
+        WasmtimeComponent::from_binary(engine, bytes).context("decode component bytes")?;
+    let mut store = wasmtime::Store::new(engine, DescribeHostState::default());
+    let mut linker = Linker::new(engine);
+    add_describe_host_imports(&mut linker)?;
+    let instance = linker
+        .instantiate(&mut store, &component)
+        .context("instantiate component root world")?;
+
+    let descriptor = [
+        "component-descriptor",
+        "greentic:component/component-descriptor",
+        "greentic:component/component-descriptor@0.6.0",
+    ]
+    .iter()
+    .find_map(|name| instance.get_export_index(&mut store, None, name))
+    .ok_or_else(|| anyhow!("missing exported descriptor instance"))?;
+    let describe_export = [
+        "describe",
+        "greentic:component/component-descriptor@0.6.0#describe",
+    ]
+    .iter()
+    .find_map(|name| instance.get_export_index(&mut store, Some(&descriptor), name))
+    .ok_or_else(|| anyhow!("missing exported describe function"))?;
+    let describe_func = instance
+        .get_typed_func::<(), (Vec<u8>,)>(&mut store, &describe_export)
+        .context("lookup component-descriptor.describe")?;
+    let (describe_bytes,) = describe_func
+        .call(&mut store, ())
+        .context("call component-descriptor.describe")?;
     canonical::from_cbor(&describe_bytes).context("decode ComponentDescribe")
+}
+
+fn should_fallback_to_untyped_describe(err: &anyhow::Error) -> bool {
+    err.to_string().contains("instantiate component-v0-v6-v0")
 }
 
 fn load_describe_from_cache_path(path: Option<&Path>) -> Result<Option<ComponentDescribe>> {
